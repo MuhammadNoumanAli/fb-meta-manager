@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -7,11 +8,19 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { LoggerModule } from 'nestjs-pino';
 import { join } from 'path';
 import { AppController } from './app.controller';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
 import configuration from './config/configuration';
 import { validateEnvironment } from './config/env.validation';
+import { AccessModule } from './modules/access/access.module';
+import { AgenciesModule } from './modules/agencies/agencies.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { BusinessesModule } from './modules/businesses/businesses.module';
 import { HealthModule } from './modules/health/health.module';
 import { QueuesModule } from './modules/queues/queues.module';
 import { RedisModule } from './modules/redis/redis.module';
+import { UsersModule } from './modules/users/users.module';
 
 @Module({
   imports: [
@@ -105,7 +114,17 @@ import { RedisModule } from './modules/redis/redis.module';
     RedisModule,
     QueuesModule,
     HealthModule,
+    AccessModule,
+    AuditModule,
+    AuthModule,
+    UsersModule,
+    BusinessesModule,
+    AgenciesModule,
   ],
   controllers: [AppController],
+  providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
+  ],
 })
 export class AppModule {}
