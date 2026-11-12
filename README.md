@@ -71,8 +71,8 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 4. Start Redis with `maxmemory-policy noeviction` (required by BullMQ). With Docker the
    compose file already applies this setting.
 
-5. Apply database migrations (creates the identity, tenancy, invitation and business
-   profile schema, and seeds roles/permissions):
+5. Apply database migrations (creates the identity, tenancy, invitation and Meta integration
+   schema, and seeds roles/permissions):
 
    ```bash
    npm run migration:run
@@ -112,6 +112,15 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 | `DELETE /api/v1/agencies/:id/clients/:clientBusinessId/invitations/:invitationId` | Revoke a pending invitation |
 | `GET /api/v1/invitations/:token` | Public invitation preview |
 | `POST /api/v1/invitations/:token/accept` | Accept an invitation and start a session |
+| `GET /api/v1/businesses/:businessId/integrations/meta` | Meta connection health, permissions and assets |
+| `GET /api/v1/businesses/:businessId/integrations/meta/events` | Recent Meta connection activity |
+| `POST /api/v1/businesses/:businessId/integrations/meta/oauth/start` | Start Meta OAuth |
+| `POST /api/v1/businesses/:businessId/integrations/meta/system-user` | Connect a System User token |
+| `POST /api/v1/businesses/:businessId/integrations/meta/validate` | Revalidate token and permissions |
+| `POST /api/v1/businesses/:businessId/integrations/meta/discover` | Refresh discovered assets |
+| `DELETE /api/v1/businesses/:businessId/integrations/meta` | Disconnect and revoke access |
+| `GET /api/v1/integrations/meta/oauth/callback` | Public Meta OAuth callback (state protected) |
+| `POST /api/v1/integrations/meta/monitor/sweep` | Platform-only token validation sweep |
 | `GET /api/v1/audit-logs?businessId=` | Audit trail for a business |
 | `GET /api/docs` | Swagger UI |
 
@@ -146,6 +155,33 @@ existing account or creates one; they become the business owner either way.
 - Email delivery is not configured yet, so outside production the API returns the acceptance
   link; in production the link must be delivered through a channel that arrives in Phase 8.
 
+## Meta integrations
+
+Each business connects its own Meta assets from the **Integrations** tab on the business
+detail screen. The dashboard shows connection health, token expiry, granted permissions and
+the discovered Business Portfolios, Facebook Pages, Instagram business accounts and ad
+accounts. Owners and admins can connect, reconnect, refresh, validate or disconnect.
+
+- OAuth starts from `POST .../integrations/meta/oauth/start`. The API stores a hashed,
+  single-use, business-bound state (10-minute TTL) and returns the Meta dialog URL.
+- The public callback exchanges the code, upgrades it to a long-lived token, verifies it with
+  `debug_token`, encrypts it, records the permissions and discovers assets. It then redirects
+  to the business screen with `?meta=connected|reconnected|error&reason=...`.
+- Confidential System User tokens can be supplied by server administrators through
+  `POST .../system-user` instead of browser OAuth.
+- Every access token is stored only as AES-256-GCM ciphertext with a key version. The API
+  never returns tokens, and the frontend never receives them.
+- Validation detects expired or revoked credentials, clears the credential, flags
+  `requiresReauthorization` and records an audit entry. Missing scopes produce `attention`
+  with the exact missing permissions.
+- Health values are `not_connected`, `healthy`, `attention`, `expired` and `revoked`. The
+  platform-only `monitor/sweep` endpoint is the foundation for scheduled token monitoring.
+
+Configure `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI` and
+`INTEGRATION_ENCRYPTION_KEY` (32 bytes as hex or base64). `META_OAUTH_SCOPES` controls the
+requested permissions; `META_GRAPH_BASE_URL` and `META_DIALOG_BASE_URL` allow sandbox or
+proxy deployments. Production startup fails without a valid encryption key.
+
 ## Scripts
 
 | Command | Description |
@@ -176,7 +212,9 @@ npm run migration:generate -w @adpilot/api -- src/database/migrations/DescribeCh
   configured through `apps/api/.env`. They cover registration, login, refresh rotation and
   replay rejection, password reset, RBAC, tenant isolation, the agency/client access model,
   client invitations (creation, preview, acceptance, expiry, revocation, superseding and
-  audit) and client ownership after an agency relationship ends.
+  audit), client ownership after an agency relationship ends, and Meta OAuth, encrypted token
+  storage, permission drift, asset discovery, revoked access and reauthorization. Meta calls
+  are mocked, so no live credentials are required.
 - Frontend unit tests run with Vitest.
 - CI runs the e2e suite in a dedicated job with MySQL 8 and Redis service containers and
   applies migrations first.
@@ -191,4 +229,7 @@ in [DEVELOPMENT_PROGRESS.md](DEVELOPMENT_PROGRESS.md).
 
 - Never commit credentials or tokens.
 - Integration secrets stay server-side; tokens are never exposed to the frontend.
+- Meta access tokens are encrypted at rest with AES-256-GCM and a versioned key; only the
+  ciphertext is persisted, and `INTEGRATION_ENCRYPTION_KEY` is required in production.
+- OAuth states are hashed, single use and expire after 10 minutes.
 - Tenant isolation is enforced in the backend, never by frontend filtering alone.

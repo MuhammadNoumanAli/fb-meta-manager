@@ -1,8 +1,119 @@
 # AdPilot Development Progress
 
-**Current phase:** Phase 2 — Agency Client Onboarding and Invitations (complete)
+**Current phase:** Phase 3 — Meta Authentication and Asset Integration (complete)
 **Last updated:** 2026-11-12
+**API version:** 0.4.0
 **Blueprint:** [docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md](docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md)
+
+---
+
+## Phase 3 — Meta Authentication and Asset Integration
+
+### Scope delivered
+
+- [x] Meta OAuth start endpoint that issues a single-use, hashed, business-scoped state
+- [x] Public OAuth callback protected by state validation, expiry and one-time consumption
+- [x] Code-for-token exchange plus long-lived (`fb_exchange_token`) upgrade
+- [x] `debug_token` verification for app, user, scopes and expiry
+- [x] Access tokens encrypted at rest with AES-256-GCM and a versioned key envelope
+- [x] System User token intake for server-to-server connections
+- [x] Permission tracking: requested scopes, granted permissions, missing permissions and drift
+- [x] Business Portfolio, Facebook Page, Instagram business account and ad account discovery
+- [x] Paginated Graph API discovery with transactional asset replacement
+- [x] Integration health overview with reauthorization detection
+- [x] Token monitoring foundation (validate now plus a platform-only sweep endpoint)
+- [x] Best-effort permission revocation on disconnect, with token and asset cleanup
+- [x] Token event ledger and audit entries for every integration state change
+- [x] Frontend integrations tab with health, connect, reconnect, system user, assets and activity
+- [x] OAuth return handling on the business detail screen (`?meta=connected|reconnected|error`)
+
+### Database migrations
+
+| Migration | Status |
+|---|---|
+| `1764000000000-Phase3MetaIntegrations` | Applied locally |
+
+Adds `integration_authorizations`, `meta_oauth_states`, `meta_business_portfolios`,
+`meta_pages`, `meta_instagram_accounts`, `meta_ad_accounts` and `integration_token_events`.
+The migration also inserts the `integration.read` permission and grants it to agency owners,
+agency admins, agency staff, business owners and business admins.
+
+### API endpoints
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/businesses/:businessId/integrations/meta` | `integration.read` | Health, token metadata, permissions and assets |
+| GET | `/api/v1/businesses/:businessId/integrations/meta/events` | `integration.read` | Recent token and connection activity |
+| POST | `/api/v1/businesses/:businessId/integrations/meta/oauth/start` | `integration.manage` | Create state and return the Meta authorization URL |
+| POST | `/api/v1/businesses/:businessId/integrations/meta/system-user` | `integration.manage` | Connect with a System User token |
+| POST | `/api/v1/businesses/:businessId/integrations/meta/validate` | `integration.manage` | Re-check the token and permissions now |
+| POST | `/api/v1/businesses/:businessId/integrations/meta/discover` | `integration.manage` | Refresh discovered assets |
+| DELETE | `/api/v1/businesses/:businessId/integrations/meta` | `integration.manage` | Disconnect and revoke permissions |
+| GET | `/api/v1/integrations/meta/oauth/callback` | Public (state-bound) | Complete OAuth and redirect to the frontend |
+| POST | `/api/v1/integrations/meta/monitor/sweep` | `platform.manage` | Validation sweep for the monitoring foundation |
+
+`status` is one of `not_connected`, `healthy`, `attention`, `expired` or `revoked`.
+`requiresReauthorization` is true when the credential is missing, expired or revoked.
+
+### Frontend screens
+
+| Screen | Route | Status |
+|---|---|---|
+| Business detail — integrations tab (health, connect, assets, activity) | `/businesses/:businessId?tab=integrations` | Complete |
+| Meta OAuth return with snackbar feedback | `/businesses/:businessId?meta=...` | Complete |
+
+### Security properties
+
+- Raw access tokens are never stored: AES-256-GCM ciphertext with a 12-byte IV, auth tag and
+  key version (`v1`) is the only persisted form. Tokens never appear in API responses or the
+  frontend bundle.
+- The encryption key comes from `INTEGRATION_ENCRYPTION_KEY` (32 bytes as hex or base64) and
+  is mandatory in production. Development and test derive a deterministic key from the JWT
+  access secret so local flows work without weakening production.
+- OAuth state is 32 random bytes stored as a SHA-256 hash with a 10-minute expiry, bound to
+  the business and initiating user, and consumed exactly once. Replays redirect with
+  `reason=state_expired`.
+- The callback is public only because Meta redirects the browser there; it cannot create or
+  read a connection without a valid state row.
+- Every integration route resolves the business through the permission guard, so another
+  tenant's business returns `404` even with a valid session.
+- Disconnect and revoked/expired detection clear the encrypted credential, remove discovered
+  assets and write token events plus audit records.
+- Tests use a mocked Graph client; no live Meta credentials or live API calls are required.
+
+### Verification
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | Pass (API + web) |
+| Typecheck | `npm run typecheck` | Pass (API + web) |
+| API unit tests | `npm run test -w @adpilot/api` | Pass (3 suites, 14 tests) |
+| Web unit tests | `npm run test -w @adpilot/web` | Pass (3 files, 16 tests) |
+| API e2e (MySQL + Redis) | `npm run test:e2e -w @adpilot/api` | Pass (4 suites, 39 tests) |
+| Build | `npm run build` | Pass (API dist + web dist) |
+| Browser flow | connect → assets → permission warning → reconnect → health | Pass |
+| Token protection | API responses and database contain no plaintext token | Pass |
+
+### Known issues / limitations
+
+- Live Meta OAuth requires an approved Meta app plus `META_APP_ID`, `META_APP_SECRET` and a
+  registered `META_REDIRECT_URI`. Without them the API reports a configuration error and the
+  UI surfaces it; CI and local verification use mocks.
+- Token monitoring is a foundation only: `POST /integrations/meta/monitor/sweep` and the
+  “Check access” action run validation on demand. A scheduled BullMQ job arrives with the
+  monitoring worker phase.
+- Discovery is best effort after OAuth. If Graph rejects an asset endpoint, the connection is
+  still saved and assets can be refreshed later.
+- The app requests the scopes configured in `META_OAUTH_SCOPES`; Meta may not grant all of
+  them for every app review state. Missing scopes produce `attention` and are listed in the UI.
+- WhatsApp Business assets are out of scope for this phase and arrive with the messaging phase.
+
+### Decisions requiring approval
+
+- One authorization row per business and provider, with `client_oauth` and `system_user`
+  connection modes sharing the same encrypted token pipeline.
+- Health thresholds for the monitoring foundation: expiring within 3 days or not validated
+  in 7 days. These can be tuned when the scheduled monitor is introduced.
 
 ---
 
