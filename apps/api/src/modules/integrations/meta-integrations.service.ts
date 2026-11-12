@@ -506,7 +506,10 @@ export class MetaIntegrationsService {
         );
       }
 
-      if (authorization.status === IntegrationStatus.REVOKED) {
+      if (
+        authorization.status === IntegrationStatus.REVOKED ||
+        authorization.status === IntegrationStatus.EXPIRED
+      ) {
         revoked += 1;
       } else if (before === IntegrationStatus.ACTIVE) {
         refreshed += 1;
