@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { APP_VERSION } from './common/constants/version';
 import { Public } from './common/decorators/public.decorator';
 
 @ApiTags('system')
@@ -12,7 +13,7 @@ export class AppController {
   getInfo() {
     return {
       name: 'AdPilot API',
-      version: '0.2.0',
+      version: APP_VERSION,
       environment: process.env.NODE_ENV ?? 'development',
       docs: '/api/docs',
       health: '/api/v1/health',

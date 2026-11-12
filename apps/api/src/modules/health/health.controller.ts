@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { HealthCheck, HealthCheckService, TypeOrmHealthIndicator } from '@nestjs/terminus';
+import { APP_VERSION } from '../../common/constants/version';
 import { Public } from '../../common/decorators/public.decorator';
 import { RedisHealthIndicator } from './redis.health';
 
@@ -21,7 +22,7 @@ export class HealthController {
     return {
       status: 'ok',
       service: 'adpilot-api',
-      version: process.env.npm_package_version ?? '0.1.0',
+      version: process.env.npm_package_version ?? APP_VERSION,
       environment: process.env.NODE_ENV ?? 'development',
       uptimeSeconds: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),

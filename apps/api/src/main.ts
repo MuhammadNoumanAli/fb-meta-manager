@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { configureApplication } from './app.setup';
+import { APP_VERSION } from './common/constants/version';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap(): Promise<void> {
@@ -25,9 +26,9 @@ async function bootstrap(): Promise<void> {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('AdPilot API')
     .setDescription(
-      'Multi-tenant advertising management API. Phase 1 covers authentication and tenancy.',
+      'Multi-tenant advertising management API. Phase 2 covers authentication, tenancy, client onboarding and invitations.',
     )
-    .setVersion('0.2.0')
+    .setVersion(APP_VERSION)
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
