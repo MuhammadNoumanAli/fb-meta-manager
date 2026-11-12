@@ -16,11 +16,14 @@
           </v-avatar>
           <div>
             <div class="text-subtitle-1 font-weight-medium">Meta advertising</div>
-            <div class="text-body-2 text-medium-emphasis">
+            <div v-if="authorization.connectionMode" class="text-body-2 text-medium-emphasis">
               {{ formatConnectionMode(authorization.connectionMode) }}
               <span v-if="authorization.externalUserName">
                 · {{ authorization.externalUserName }}
               </span>
+            </div>
+            <div v-else class="text-body-2 text-medium-emphasis">
+              Connect a Meta account to sync advertising assets
             </div>
           </div>
           <v-chip
