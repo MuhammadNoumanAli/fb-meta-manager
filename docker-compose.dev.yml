@@ -1,0 +1,40 @@
+# Optional local infrastructure for developers who do not use native MySQL/Redis.
+# Usage: docker compose -f docker-compose.dev.yml up -d
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: adpilot-mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: root_dev_password
+      MYSQL_DATABASE: adpilot
+      MYSQL_USER: adpilot
+      MYSQL_PASSWORD: adpilot_dev_password
+    ports:
+      - '3306:3306'
+    volumes:
+      - adpilot_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-uroot', '-proot_dev_password']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: adpilot-redis
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      - '6379:6379'
+    volumes:
+      - adpilot_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  adpilot_mysql_data:
+  adpilot_redis_data:

@@ -1,0 +1,27 @@
+{
+  "name": "adpilot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AdPilot - multi-tenant advertising management platform (NestJS API + Vue 3 frontend)",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev -w @adpilot/api",
+    "dev:web": "npm run dev -w @adpilot/web",
+    "build": "npm run build -w @adpilot/api && npm run build -w @adpilot/web",
+    "build:api": "npm run build -w @adpilot/api",
+    "build:web": "npm run build -w @adpilot/web",
+    "lint": "npm run lint -w @adpilot/api && npm run lint -w @adpilot/web",
+    "format": "prettier --write \"apps/**/*.{ts,vue,js,json,md}\"",
+    "test": "npm run test -w @adpilot/api && npm run test -w @adpilot/web",
+    "test:api": "npm run test -w @adpilot/api",
+    "test:web": "npm run test -w @adpilot/web",
+    "typecheck": "npm run typecheck -w @adpilot/api && npm run typecheck -w @adpilot/web",
+    "migration:run": "npm run migration:run -w @adpilot/api",
+    "migration:revert": "npm run migration:revert -w @adpilot/api"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
