@@ -71,7 +71,13 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 4. Start Redis with `maxmemory-policy noeviction` (required by BullMQ). With Docker the
    compose file already applies this setting.
 
-5. Run both applications in separate terminals:
+5. Apply database migrations (creates the Phase 1 schema and seeds roles/permissions):
+
+   ```bash
+   npm run migration:run
+   ```
+
+6. Run both applications in separate terminals:
 
    ```bash
    npm run dev:api    # http://localhost:3000
@@ -85,7 +91,37 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 | `GET /api/v1` | API metadata |
 | `GET /api/v1/health` | Liveness probe |
 | `GET /api/v1/health/ready` | MySQL + Redis readiness |
+| `POST /api/v1/auth/register` | Create an account and session |
+| `POST /api/v1/auth/login` | Authenticate with email and password |
+| `POST /api/v1/auth/refresh` | Rotate the refresh token (cookie based) |
+| `POST /api/v1/auth/logout` | Revoke the current session |
+| `POST /api/v1/auth/forgot-password` | Request a password reset token |
+| `POST /api/v1/auth/reset-password` | Set a new password |
+| `GET /api/v1/users/me` | Current user plus accessible workspaces |
+| `GET /api/v1/businesses/mine` | Businesses the caller can access |
+| `POST /api/v1/businesses` | Create an independent business workspace |
+| `GET/PATCH /api/v1/businesses/:id` | Business detail and settings |
+| `GET/POST/PATCH/DELETE /api/v1/businesses/:id/members[/:userId]` | Business membership and roles |
+| `GET /api/v1/agencies/mine` | Agencies the caller belongs to |
+| `POST /api/v1/agencies` | Create an agency workspace |
+| `GET/POST/PATCH/DELETE /api/v1/agencies/:id/members[/:userId]` | Agency membership and roles |
+| `GET/POST /api/v1/agencies/:id/clients` | List or onboard client businesses |
+| `DELETE /api/v1/agencies/:id/clients/:clientBusinessId` | End an agency–client relationship |
+| `GET /api/v1/audit-logs?businessId=` | Audit trail for a business |
 | `GET /api/docs` | Swagger UI |
+
+## Authentication and authorization
+
+- Access tokens are short-lived JWTs (15 minutes by default) returned in the response body.
+- Refresh tokens are opaque, hashed at rest, rotated on every refresh and delivered as an
+  httpOnly cookie scoped to `/api/v1/auth`. Replaying a rotated token revokes the whole
+  token family for that user.
+- Endpoints require a `Bearer` access token unless they are explicitly `@Public()`.
+- Every request is authorized against permissions resolved from business memberships,
+  agency–client links or platform administration. Cross-tenant access returns `404` so the
+  existence of other tenants is not disclosed.
+- Roles and permissions are seeded by the Phase 1 migration. The API enforces them; the
+  frontend only uses them to hide controls.
 
 ## Scripts
 
@@ -114,8 +150,12 @@ npm run migration:generate -w @adpilot/api -- src/database/migrations/DescribeCh
 
 - API unit tests run with Jest and do not require external services.
 - API e2e tests (`npm run test:e2e -w @adpilot/api`) require a reachable MySQL and Redis
-  configured through `apps/api/.env`.
+  configured through `apps/api/.env`. They cover registration, login, refresh rotation and
+  replay rejection, password reset, RBAC, tenant isolation and the agency/client access
+  model.
 - Frontend unit tests run with Vitest.
+- CI runs the e2e suite in a dedicated job with MySQL 8 and Redis service containers and
+  applies migrations first.
 
 ## Delivery process
 

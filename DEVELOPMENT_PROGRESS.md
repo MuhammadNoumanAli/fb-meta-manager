@@ -1,8 +1,115 @@
 # AdPilot Development Progress
 
-**Current phase:** Phase 0 — Project Foundation and Discovery (complete)
+**Current phase:** Phase 1 — Authentication and Multi-Tenancy (complete)
 **Last updated:** 2026-11-12
 **Blueprint:** [docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md](docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md)
+
+---
+
+## Phase 1 — Authentication and Multi-Tenancy
+
+### Scope delivered
+
+- [x] Identity schema: users, refresh tokens, password reset tokens, audit logs
+- [x] Tenancy schema: tenants, agencies, businesses, tenant users, business users,
+      user business roles, agency clients
+- [x] Roles and permissions seeded by migration (7 system roles, 19 permissions)
+- [x] Registration, login, logout and transparent refresh with rotation and replay detection
+- [x] Hashed refresh tokens and hashed, expiring password reset tokens
+- [x] Password recovery flow (API returns the reset token only outside production)
+- [x] Global JWT authentication guard and permission guard
+- [x] Business-level access resolution: direct membership, active agency–client link or
+      platform administration
+- [x] Business workspace creation for independent customers
+- [x] Agency workspace creation with agency membership management
+- [x] Client onboarding from an agency and ending agency–client relationships
+- [x] Business membership management with role assignment and last-owner protection
+- [x] Audit logging for authentication and tenancy events
+- [x] Frontend auth layout, login, registration, forgot/reset password screens
+- [x] Frontend workspace switcher, business detail (members, audit) and agency detail
+      (clients, members) screens, with permission-aware controls
+
+### Database migrations
+
+| Migration | Status |
+|---|---|
+| `1762900000000-Phase1IdentityAndTenancy` | Applied locally |
+
+Migration creates 14 tables, foreign keys, unique constraints and seeds roles,
+permissions and role-permission mappings.
+
+### API endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/v1/auth/register` | Create account and session |
+| POST | `/api/v1/auth/login` | Authenticate |
+| POST | `/api/v1/auth/refresh` | Rotate refresh token (httpOnly cookie) |
+| POST | `/api/v1/auth/logout` | Revoke current refresh token |
+| POST | `/api/v1/auth/forgot-password` | Issue password reset token |
+| POST | `/api/v1/auth/reset-password` | Consume reset token and set password |
+| GET | `/api/v1/users/me` | Current user and accessible workspaces |
+| PATCH | `/api/v1/users/me` | Update profile |
+| POST | `/api/v1/businesses` | Create independent business |
+| GET | `/api/v1/businesses/mine` | List accessible businesses |
+| GET/PATCH | `/api/v1/businesses/:id` | Read or update business |
+| GET/POST/PATCH/DELETE | `/api/v1/businesses/:id/members[/:userId]` | Membership management |
+| POST | `/api/v1/agencies` | Create agency |
+| GET | `/api/v1/agencies/mine` | List agencies |
+| GET/PATCH | `/api/v1/agencies/:id` | Read or update agency |
+| GET/POST/PATCH/DELETE | `/api/v1/agencies/:id/members[/:userId]` | Agency membership |
+| GET/POST | `/api/v1/agencies/:id/clients` | List or onboard clients |
+| DELETE | `/api/v1/agencies/:id/clients/:clientBusinessId` | End client relationship |
+| GET | `/api/v1/audit-logs?businessId=` | Business audit trail |
+
+### Frontend screens
+
+| Screen | Route | Status |
+|---|---|---|
+| Login | `/login` | Complete |
+| Register | `/register` | Complete |
+| Forgot password | `/forgot-password` | Complete |
+| Reset password | `/reset-password` | Complete |
+| Workspaces | `/` | Complete |
+| Business detail (members, audit) | `/businesses/:businessId` | Complete |
+| Agency detail (clients, members) | `/agencies/:agencyId` | Complete |
+| System status | `/system-status` | Complete |
+
+### Security properties
+
+- Access tokens: JWT, 15-minute default TTL, bearer header only.
+- Refresh tokens: 48-byte opaque values, SHA-256 hashed at rest, rotated on every use;
+  replay of a consumed token revokes every refresh token for that user.
+- Refresh cookie: `httpOnly`, `sameSite=lax`, path `/api/v1/auth`, `secure` in production.
+- Password reset tokens: hashed at rest, single use, 30-minute expiry; resetting revokes
+  all refresh tokens.
+- Passwords hashed with bcrypt (cost 12); login failures are generic and constant-shaped.
+- Cross-tenant requests return `404` rather than `403` to avoid tenant enumeration.
+- Audit logs record actor, tenant, business, entity and IP/user agent for sensitive events.
+
+### Verification
+
+| Check | Command | Result |
+|---|---|---|
+| API lint | `npm run lint` | Pass |
+| Typecheck | `npm run typecheck` | Pass (API + web) |
+| API unit tests | `npm run test -w @adpilot/api` | Pass (2 suites, 7 tests) |
+| Web unit tests | `npm run test -w @adpilot/web` | Pass (3 files, 14 tests) |
+| API e2e (MySQL + Redis) | `npm run test:e2e -w @adpilot/api` | Pass (2 suites, 16 tests) |
+| Build | `npm run build` | Pass (API dist + web dist) |
+| Runtime smoke (31 checks) | register/login/RBAC/refresh/reset/agency flows | Pass |
+| Browser flows | register, create business, audit, agency + client, member add, reload | Pass |
+
+### Known issues / limitations
+
+- Email delivery is not wired yet: outside production the API returns the reset token in
+  the forgot-password response, and no email is sent.
+- Invitations are deferred to Phase 2; members are added by email against existing accounts.
+- Audit retention/archival and log export are not implemented.
+
+### Decisions requiring approval
+
+- None at this time.
 
 ---
 
@@ -73,9 +180,9 @@ Migration infrastructure is configured: `apps/api/src/database/data-source.ts` p
 
 ### Known issues / limitations
 
-- No domain entities or migrations exist yet; the schema begins with Phase 1.
-- API e2e tests require reachable MySQL and Redis; CI currently runs unit tests only.
-- CI does not yet provision MySQL/Redis containers for integration tests.
+- No domain entities or migrations existed in Phase 0; the schema began with Phase 1.
+- API e2e tests require reachable MySQL and Redis. Resolved in Phase 1: CI now provisions
+  MySQL 8 and Redis service containers and runs migrations plus the e2e suite.
 - BullMQ registers only the `notifications` queue; the remaining queues arrive in Phase 7.
 
 ### Decisions requiring approval
@@ -89,7 +196,7 @@ Migration infrastructure is configured: `apps/api/src/database/data-source.ts` p
 | Phase | Status |
 |---|---|
 | 0 — Project foundation and discovery | Complete |
-| 1 — Authentication and multi-tenancy | Not started |
+| 1 — Authentication and multi-tenancy | Complete |
 | 2 — Agency client onboarding and invitations | Not started |
 | 3 — Meta authentication and asset integration | Not started |
 | 4 — Meta webhooks and lead integration | Not started |

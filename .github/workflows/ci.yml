@@ -39,3 +39,71 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  integration:
+    name: End-to-end tests (MySQL + Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: adpilot
+          MYSQL_USER: adpilot
+          MYSQL_PASSWORD: adpilot
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      NODE_ENV: test
+      PORT: 3000
+      API_PREFIX: api/v1
+      FRONTEND_ORIGIN: http://localhost:5173
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_NAME: adpilot
+      DATABASE_USER: adpilot
+      DATABASE_PASSWORD: adpilot
+      DATABASE_LOGGING: 'false'
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      JWT_ACCESS_SECRET: ci-access-secret-please-change-me-32-chars
+      JWT_REFRESH_SECRET: ci-refresh-secret-please-change-me-32-chars
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+      META_API_VERSION: v23.0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run database migrations
+        run: npm run migration:run
+
+      - name: End-to-end tests
+        run: npm run test:e2e -w @adpilot/api
