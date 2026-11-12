@@ -71,7 +71,8 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 4. Start Redis with `maxmemory-policy noeviction` (required by BullMQ). With Docker the
    compose file already applies this setting.
 
-5. Apply database migrations (creates the Phase 1 schema and seeds roles/permissions):
+5. Apply database migrations (creates the identity, tenancy, invitation and business
+   profile schema, and seeds roles/permissions):
 
    ```bash
    npm run migration:run
@@ -107,6 +108,10 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 | `GET/POST/PATCH/DELETE /api/v1/agencies/:id/members[/:userId]` | Agency membership and roles |
 | `GET/POST /api/v1/agencies/:id/clients` | List or onboard client businesses |
 | `DELETE /api/v1/agencies/:id/clients/:clientBusinessId` | End an agency–client relationship |
+| `GET/POST /api/v1/agencies/:id/clients/:clientBusinessId/invitations` | List or create client owner invitations |
+| `DELETE /api/v1/agencies/:id/clients/:clientBusinessId/invitations/:invitationId` | Revoke a pending invitation |
+| `GET /api/v1/invitations/:token` | Public invitation preview |
+| `POST /api/v1/invitations/:token/accept` | Accept an invitation and start a session |
 | `GET /api/v1/audit-logs?businessId=` | Audit trail for a business |
 | `GET /api/docs` | Swagger UI |
 
@@ -122,6 +127,24 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
   existence of other tenants is not disclosed.
 - Roles and permissions are seeded by the Phase 1 migration. The API enforces them; the
   frontend only uses them to hide controls.
+
+## Client onboarding and invitations
+
+Agencies onboard a client business, then invite its owner by email. The recipient opens a
+secure acceptance link, reviews the agency and business names, and either signs in with an
+existing account or creates one; they become the business owner either way.
+
+- Invitation tokens are 32 random bytes, returned once and stored only as a SHA-256 hash.
+- Invitations expire after 7 days by default (configurable from 1 to 30 days when created).
+  Accepting, revoking, superseding or expiring a link makes it permanently unusable (`410`).
+- Creating a new invitation for the same client and email revokes earlier pending links.
+- New accounts choose first/last name and password during acceptance. Existing accounts must
+  confirm their password, so an invitation never grants access without it.
+- Acceptance assigns the `business_owner` role when the user has no role in that business and
+  can set the workspace timezone, currency and business profile on first membership.
+- Agency staff manage invitations with `agency.manage`; cross-agency attempts return `404`.
+- Email delivery is not configured yet, so outside production the API returns the acceptance
+  link; in production the link must be delivered through a channel that arrives in Phase 8.
 
 ## Scripts
 
@@ -151,8 +174,9 @@ npm run migration:generate -w @adpilot/api -- src/database/migrations/DescribeCh
 - API unit tests run with Jest and do not require external services.
 - API e2e tests (`npm run test:e2e -w @adpilot/api`) require a reachable MySQL and Redis
   configured through `apps/api/.env`. They cover registration, login, refresh rotation and
-  replay rejection, password reset, RBAC, tenant isolation and the agency/client access
-  model.
+  replay rejection, password reset, RBAC, tenant isolation, the agency/client access model,
+  client invitations (creation, preview, acceptance, expiry, revocation, superseding and
+  audit) and client ownership after an agency relationship ends.
 - Frontend unit tests run with Vitest.
 - CI runs the e2e suite in a dedicated job with MySQL 8 and Redis service containers and
   applies migrations first.

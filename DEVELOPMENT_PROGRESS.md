@@ -1,8 +1,97 @@
 # AdPilot Development Progress
 
-**Current phase:** Phase 1 — Authentication and Multi-Tenancy (complete)
+**Current phase:** Phase 2 — Agency Client Onboarding and Invitations (complete)
 **Last updated:** 2026-11-12
 **Blueprint:** [docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md](docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md)
+
+---
+
+## Phase 2 — Agency Client Onboarding and Invitations
+
+### Scope delivered
+
+- [x] `invitations` table and nullable business profile columns via migration
+- [x] Agencies create, list and revoke client owner invitations
+- [x] Secure single-use invitation tokens (32 random bytes, SHA-256 hash at rest)
+- [x] Invitation expiry with a 7-day default, configurable from 1 to 30 days
+- [x] New invitations supersede earlier pending links for the same client and email
+- [x] Public invitation preview showing agency, business, recipient and expiry
+- [x] Acceptance creates an account (name + password) or uses an existing account
+      (password confirmation required, never duplicated)
+- [x] Acceptance assigns `business_owner` only when the user has no role in the business
+- [x] First membership onboarding sets timezone, currency and business profile fields
+- [x] Expired, revoked, superseded and already-accepted links return `410 Gone`
+- [x] Audit entries for invitation creation, acceptance and revocation
+- [x] Frontend invite and invitation-list dialogs with secure link copy
+- [x] Public invitation acceptance screen with existing/new account states
+- [x] Business detail profile editing (industry, website, contact email/phone, description)
+
+### Database migrations
+
+| Migration | Status |
+|---|---|
+| `1763000000000-Phase2InvitationsAndBusinessProfiles` | Applied locally |
+
+Adds the `invitations` table (status enum, hashed unique token, expiry, acceptance fields)
+and `industry`, `description`, `website`, `contact_email`, `contact_phone` to `businesses`.
+
+### API endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/agencies/:id/clients/:clientBusinessId/invitations` | List invitations for a client |
+| POST | `/api/v1/agencies/:id/clients/:clientBusinessId/invitations` | Create a client owner invitation |
+| DELETE | `/api/v1/agencies/:id/clients/:clientBusinessId/invitations/:invitationId` | Revoke a pending invitation |
+| GET | `/api/v1/invitations/:token` | Public preview (agency, business, email, expiry) |
+| POST | `/api/v1/invitations/:token/accept` | Accept and start a session (sets refresh cookie) |
+
+`GET/PATCH /api/v1/businesses/:id` now also accepts the profile fields.
+
+### Frontend screens
+
+| Screen | Route | Status |
+|---|---|---|
+| Agency detail — invite and invitation dialogs | `/agencies/:agencyId` | Complete |
+| Invitation acceptance (public, existing/new account) | `/invitations/:token` | Complete |
+| Business detail — profile editing | `/businesses/:businessId` | Complete |
+
+### Security properties
+
+- Raw invitation tokens are returned only on creation outside production; only SHA-256
+  hashes are stored, so listing never redisplays a link.
+- Tokens are single use: acceptance, revocation, expiry or superseding moves the status to
+  a terminal state and every later preview or attempt returns `410`.
+- Acceptance runs in a transaction that locks the invitation row before changing state.
+- Existing accounts must confirm their password; mismatches return `401` without revealing
+  whether the password or invitation was wrong. Invitations never create duplicate accounts.
+- Invitation management requires `agency.manage`; other agencies receive `404`.
+- Client ownership is preserved: ending the agency relationship removes agency access while
+  the client owner keeps direct `business_owner` access.
+
+### Verification
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | Pass (API + web) |
+| Typecheck | `npm run typecheck` | Pass (API + web) |
+| API unit tests | `npm run test -w @adpilot/api` | Pass (2 suites, 7 tests) |
+| Web unit tests | `npm run test -w @adpilot/web` | Pass (3 files, 14 tests) |
+| API e2e (MySQL + Redis) | `npm run test:e2e -w @adpilot/api` | Pass (3 suites, 27 tests) |
+| Build | `npm run build` | Pass (API dist + web dist) |
+| Browser flow | create agency → client → invite → sign out → accept → owner role → profile edit | Pass |
+| One-time link | reopening an accepted invitation shows “already been used” | Pass |
+
+### Known issues / limitations
+
+- Email delivery is not configured: outside production the API returns the acceptance link;
+  in production the link must be delivered manually until notifications arrive in Phase 8.
+- Invitations target client owners. Adding staff to an existing business still uses the
+  add-member endpoint against registered accounts.
+- The invitation list intentionally does not show the raw link because only hashes exist.
+
+### Decisions requiring approval
+
+- None at this time.
 
 ---
 
@@ -104,7 +193,6 @@ permissions and role-permission mappings.
 
 - Email delivery is not wired yet: outside production the API returns the reset token in
   the forgot-password response, and no email is sent.
-- Invitations are deferred to Phase 2; members are added by email against existing accounts.
 - Audit retention/archival and log export are not implemented.
 
 ### Decisions requiring approval
@@ -197,7 +285,7 @@ Migration infrastructure is configured: `apps/api/src/database/data-source.ts` p
 |---|---|
 | 0 — Project foundation and discovery | Complete |
 | 1 — Authentication and multi-tenancy | Complete |
-| 2 — Agency client onboarding and invitations | Not started |
+| 2 — Agency client onboarding and invitations | Complete |
 | 3 — Meta authentication and asset integration | Not started |
 | 4 — Meta webhooks and lead integration | Not started |
 | 5 — Campaign and advertisement management | Not started |
