@@ -50,10 +50,26 @@ describe('environment validation', () => {
         NODE_ENV: 'production',
         JWT_ACCESS_SECRET: 'a'.repeat(32),
         JWT_REFRESH_SECRET: 'b'.repeat(32),
+        INTEGRATION_ENCRYPTION_KEY: 'c'.repeat(43),
       },
       { abortEarly: false, allowUnknown: true },
     );
 
     expect(error).toBeUndefined();
+  });
+
+  it('requires integration encryption key in production', () => {
+    const { error } = envValidationSchema.validate(
+      {
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        JWT_ACCESS_SECRET: 'a'.repeat(32),
+        JWT_REFRESH_SECRET: 'b'.repeat(32),
+      },
+      { abortEarly: false, allowUnknown: true },
+    );
+
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('INTEGRATION_ENCRYPTION_KEY');
   });
 });

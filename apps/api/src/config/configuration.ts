@@ -28,6 +28,12 @@ export interface AppConfiguration {
     redirectUri: string;
     apiVersion: string;
     webhookVerifyToken: string;
+    graphBaseUrl: string;
+    dialogBaseUrl: string;
+    scopes: string[];
+  };
+  integrations: {
+    encryptionKey: string;
   };
   whatsapp: {
     provider: string;
@@ -77,6 +83,16 @@ export default (): AppConfiguration => ({
     redirectUri: process.env.META_REDIRECT_URI ?? '',
     apiVersion: process.env.META_API_VERSION ?? 'v23.0',
     webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN ?? '',
+    graphBaseUrl: process.env.META_GRAPH_BASE_URL ?? 'https://graph.facebook.com',
+    dialogBaseUrl: process.env.META_DIALOG_BASE_URL ?? 'https://www.facebook.com',
+    scopes: (process.env.META_OAUTH_SCOPES ??
+      'ads_management,business_management,pages_show_list,pages_read_engagement,instagram_basic,leads_retrieval')
+      .split(',')
+      .map((scope) => scope.trim())
+      .filter((scope) => scope.length > 0),
+  },
+  integrations: {
+    encryptionKey: process.env.INTEGRATION_ENCRYPTION_KEY ?? '',
   },
   whatsapp: {
     provider: process.env.WHATSAPP_PROVIDER ?? '',

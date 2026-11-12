@@ -19,6 +19,7 @@ export const PERMISSIONS = {
   LEAD_READ: 'lead.read',
   LEAD_MANAGE: 'lead.manage',
   REPORT_READ: 'report.read',
+  INTEGRATION_READ: 'integration.read',
   INTEGRATION_MANAGE: 'integration.manage',
   AUDIT_READ: 'audit.read',
   BILLING_MANAGE: 'billing.manage',

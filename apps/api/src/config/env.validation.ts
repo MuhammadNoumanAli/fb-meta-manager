@@ -37,6 +37,14 @@ export const envValidationSchema = Joi.object({
   META_REDIRECT_URI: Joi.string().allow('').optional(),
   META_API_VERSION: Joi.string().allow('').optional(),
   META_WEBHOOK_VERIFY_TOKEN: Joi.string().allow('').optional(),
+  META_GRAPH_BASE_URL: Joi.string().uri().allow('').optional(),
+  META_DIALOG_BASE_URL: Joi.string().uri().allow('').optional(),
+  META_OAUTH_SCOPES: Joi.string().allow('').optional(),
+
+  INTEGRATION_ENCRYPTION_KEY: Joi.string().allow('').when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+  }),
 
   WHATSAPP_PROVIDER: Joi.string().allow('').optional(),
   WHATSAPP_ACCESS_TOKEN: Joi.string().allow('').optional(),
