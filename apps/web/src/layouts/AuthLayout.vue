@@ -34,7 +34,7 @@
         </div>
 
         <div class="auth-brand__badge text-caption text-blue-lighten-3">
-          Phase 1 · Authentication &amp; multi-tenancy
+          Phase 2 · Client onboarding &amp; invitations
         </div>
       </section>
 
@@ -52,6 +52,7 @@ const highlights = [
   'Separate agency and client business workspaces',
   'Role-based access enforced by the API',
   'Client-owned advertising assets',
+  'Secure, expiring client invitations',
   'Auditable membership changes',
 ];
 </script>

@@ -25,6 +25,9 @@
               <div class="text-body-2 text-medium-emphasis">
                 {{ detail.business.slug }} · {{ formatAccessType(detail.accessType) }}
               </div>
+              <div v-if="detail.business.description" class="text-body-2 mt-1">
+                {{ detail.business.description }}
+              </div>
             </div>
           </div>
           <div class="d-flex flex-wrap ga-2 mt-3">
@@ -231,6 +234,28 @@
                 <v-select v-model="editForm.timezone" :items="timezones" label="Timezone" />
               </v-col>
             </v-row>
+            <v-text-field v-model="editForm.industry" label="Industry" class="mb-2" />
+            <v-text-field
+              v-model="editForm.website"
+              label="Website"
+              placeholder="https://example.com"
+              class="mb-2"
+            />
+            <v-row dense>
+              <v-col cols="12" sm="6">
+                <v-text-field v-model="editForm.contactEmail" label="Contact email" type="email" />
+              </v-col>
+              <v-col cols="12" sm="6">
+                <v-text-field v-model="editForm.contactPhone" label="Contact phone" />
+              </v-col>
+            </v-row>
+            <v-textarea
+              v-model="editForm.description"
+              label="Description"
+              rows="2"
+              auto-grow
+              class="mt-2"
+            />
           </v-card-text>
           <v-card-actions class="px-6 pb-5">
             <v-spacer />
@@ -244,7 +269,8 @@
         <v-card>
           <v-card-title class="pt-5">Add business member</v-card-title>
           <v-card-subtitle>
-            The person needs an existing AdPilot account. Invitations arrive in Phase 2.
+            Direct members need an existing AdPilot account. Invite new client owners from the
+            agency workspace.
           </v-card-subtitle>
           <v-card-text>
             <v-alert v-if="dialogError" type="error" variant="tonal" density="compact" class="mb-4">
@@ -300,6 +326,7 @@ import { useAuthStore } from '@/stores/auth';
 import type { AuditLogEntry, BusinessDetail, BusinessMember } from '@/types/workspace';
 import { formatDateTime } from '@/utils/format';
 import { formatAccessType, formatRole, formatStatus } from '@/utils/labels';
+import { currencies, timezones } from '@/utils/options';
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -322,18 +349,18 @@ const memberDialog = ref(false);
 const removeDialog = ref(false);
 const removeTarget = ref<BusinessMember | null>(null);
 
-const editForm = ref({ name: '', currency: 'MYR', timezone: 'UTC' });
+const editForm = ref({
+  name: '',
+  currency: 'MYR',
+  timezone: 'UTC',
+  industry: '',
+  website: '',
+  contactEmail: '',
+  contactPhone: '',
+  description: '',
+});
 const memberForm = ref({ email: '', roleKey: 'business_viewer' });
 
-const currencies = ['MYR', 'USD', 'SGD', 'IDR', 'THB', 'PHP', 'VND'];
-const timezones = [
-  'Asia/Kuala_Lumpur',
-  'Asia/Singapore',
-  'Asia/Jakarta',
-  'Asia/Bangkok',
-  'Asia/Manila',
-  'UTC',
-];
 const businessRoles = [
   { title: 'Business owner', value: 'business_owner' },
   { title: 'Business admin', value: 'business_admin' },
@@ -392,6 +419,11 @@ function openEdit(): void {
     name: detail.value.business.name,
     currency: detail.value.business.currency,
     timezone: detail.value.business.timezone,
+    industry: detail.value.business.industry ?? '',
+    website: detail.value.business.website ?? '',
+    contactEmail: detail.value.business.contactEmail ?? '',
+    contactPhone: detail.value.business.contactPhone ?? '',
+    description: detail.value.business.description ?? '',
   };
   dialogError.value = null;
   editDialog.value = true;
@@ -406,6 +438,11 @@ async function saveEdit(): Promise<void> {
       name: editForm.value.name.trim(),
       currency: editForm.value.currency,
       timezone: editForm.value.timezone,
+      industry: editForm.value.industry.trim(),
+      website: editForm.value.website.trim(),
+      contactEmail: editForm.value.contactEmail.trim(),
+      contactPhone: editForm.value.contactPhone.trim(),
+      description: editForm.value.description.trim(),
     });
     await auth.reload();
     editDialog.value = false;

@@ -111,6 +111,25 @@
                         Open
                       </v-btn>
                       <v-btn
+                        v-if="canManageAgency"
+                        size="small"
+                        variant="text"
+                        color="secondary"
+                        @click="openInvitations(client)"
+                      >
+                        Invitations
+                      </v-btn>
+                      <v-btn
+                        v-if="canManageAgency && client.status === 'active'"
+                        size="small"
+                        variant="text"
+                        color="secondary"
+                        prepend-icon="mdi-email-plus-outline"
+                        @click="openInvite(client)"
+                      >
+                        Invite
+                      </v-btn>
+                      <v-btn
                         v-if="canManageAgency && client.status === 'active'"
                         size="small"
                         variant="text"
@@ -236,7 +255,8 @@
         <v-card>
           <v-card-title class="pt-5">Add agency member</v-card-title>
           <v-card-subtitle>
-            The person needs an existing AdPilot account. Invitations arrive in Phase 2.
+            The person needs an existing AdPilot account. Use client invitations to onboard a
+            new client owner.
           </v-card-subtitle>
           <v-card-text>
             <v-alert v-if="dialogError" type="error" variant="tonal" density="compact" class="mb-4">
@@ -289,6 +309,151 @@
         </v-card>
       </v-dialog>
 
+      <v-dialog v-model="inviteDialog" max-width="560">
+        <v-card>
+          <v-card-title class="pt-5">Invite client owner</v-card-title>
+          <v-card-subtitle v-if="invitationClient">
+            {{ invitationClient.name }} · the recipient becomes the business owner when they
+            accept.
+          </v-card-subtitle>
+          <v-card-text>
+            <v-alert v-if="dialogError" type="error" variant="tonal" density="compact" class="mb-4">
+              {{ dialogError }}
+            </v-alert>
+
+            <template v-if="!createdInvitation">
+              <v-text-field
+                v-model="inviteForm.email"
+                label="Client email"
+                type="email"
+                class="mb-2"
+              />
+              <v-select
+                v-model="inviteForm.expiresInDays"
+                :items="expiryOptions"
+                label="Expires in"
+              />
+            </template>
+
+            <template v-else>
+              <v-alert type="success" variant="tonal" density="compact" class="mb-4">
+                Invitation created for {{ createdInvitation.email }}.
+              </v-alert>
+              <v-text-field
+                v-if="createdInvitation.acceptanceUrl"
+                :model-value="createdInvitation.acceptanceUrl"
+                label="Secure acceptance link"
+                readonly
+                append-inner-icon="mdi-content-copy"
+                @click:append-inner="copyInvitationLink(createdInvitation.acceptanceUrl)"
+              />
+              <v-alert v-else type="info" variant="tonal" density="compact">
+                Email delivery is not configured yet. The invitation is stored and can be
+                tracked from the invitations list.
+              </v-alert>
+              <div class="text-caption text-medium-emphasis mt-2">
+                Expires {{ formatDateTime(createdInvitation.expiresAt) }}
+              </div>
+            </template>
+          </v-card-text>
+          <v-card-actions class="px-6 pb-5">
+            <v-spacer />
+            <template v-if="!createdInvitation">
+              <v-btn variant="text" @click="inviteDialog = false">Cancel</v-btn>
+              <v-btn color="secondary" :loading="saving" @click="createInvitation">
+                Create invitation
+              </v-btn>
+            </template>
+            <template v-else>
+              <v-btn variant="text" @click="showInvitationList">View invitations</v-btn>
+              <v-btn color="secondary" @click="inviteDialog = false">Done</v-btn>
+            </template>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <v-dialog v-model="invitationsDialog" max-width="720">
+        <v-card>
+          <v-card-title class="pt-5">Client invitations</v-card-title>
+          <v-card-subtitle v-if="invitationClient">{{ invitationClient.name }}</v-card-subtitle>
+          <v-card-text>
+            <div class="d-flex justify-end mb-3">
+              <v-btn
+                size="small"
+                variant="tonal"
+                color="secondary"
+                prepend-icon="mdi-email-plus-outline"
+                @click="startInviteFromList"
+              >
+                New invitation
+              </v-btn>
+            </div>
+
+            <v-progress-linear v-if="invitationsLoading" indeterminate color="secondary" />
+
+            <v-table v-else density="comfortable">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Status</th>
+                  <th>Expires</th>
+                  <th class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="invitation in invitationsList" :key="invitation.id">
+                  <td>
+                    <div class="font-weight-medium">{{ invitation.email }}</div>
+                    <div class="text-caption text-medium-emphasis">
+                      Sent {{ formatDate(invitation.createdAt) }}
+                    </div>
+                  </td>
+                  <td>
+                    <v-chip
+                      size="x-small"
+                      :color="invitationColor(invitation.status)"
+                      variant="tonal"
+                    >
+                      {{ formatStatus(invitation.status) }}
+                    </v-chip>
+                  </td>
+                  <td class="text-body-2">{{ formatDate(invitation.expiresAt) }}</td>
+                  <td class="text-right">
+                    <v-btn
+                      v-if="invitation.status === 'pending'"
+                      size="small"
+                      variant="text"
+                      color="error"
+                      @click="revokeInvitation(invitation)"
+                    >
+                      Revoke
+                    </v-btn>
+                    <v-btn
+                      v-if="invitation.status === 'pending' && invitation.acceptanceUrl"
+                      size="small"
+                      variant="text"
+                      color="secondary"
+                      @click="copyInvitationLink(invitation.acceptanceUrl)"
+                    >
+                      Copy link
+                    </v-btn>
+                  </td>
+                </tr>
+                <tr v-if="invitationsList.length === 0">
+                  <td colspan="4" class="text-center text-medium-emphasis py-6">
+                    No invitations for this client yet.
+                  </td>
+                </tr>
+              </tbody>
+            </v-table>
+          </v-card-text>
+          <v-card-actions class="px-6 pb-5">
+            <v-spacer />
+            <v-btn variant="text" @click="invitationsDialog = false">Close</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
       <CreateBusinessDialog
         v-model:open="clientDialog"
         :agency-id="agencyId"
@@ -311,7 +476,13 @@ import CreateBusinessDialog from '@/components/workspaces/CreateBusinessDialog.v
 import { ApiError } from '@/services/api/client';
 import { workspaceApi } from '@/services/api/workspace.api';
 import { useAuthStore } from '@/stores/auth';
-import type { AgencyClient, AgencyDetail, AgencyMember } from '@/types/workspace';
+import type {
+  AgencyClient,
+  AgencyDetail,
+  AgencyMember,
+  InvitationSummary,
+} from '@/types/workspace';
+import { formatDateTime } from '@/utils/format';
 import { formatRole, formatStatus } from '@/utils/labels';
 
 const route = useRoute();
@@ -339,6 +510,15 @@ const clientDialog = ref(false);
 const removeTarget = ref<AgencyMember | null>(null);
 const endTarget = ref<AgencyClient | null>(null);
 const memberForm = ref({ email: '', roleKey: 'agency_staff' });
+
+const inviteDialog = ref(false);
+const invitationsDialog = ref(false);
+const invitationsLoading = ref(false);
+const invitationClient = ref<AgencyClient | null>(null);
+const invitationsList = ref<InvitationSummary[]>([]);
+const createdInvitation = ref<InvitationSummary | null>(null);
+const inviteForm = ref({ email: '', expiresInDays: 7 });
+const expiryOptions = [1, 3, 7, 14, 30];
 
 const agencyRoles = [
   { title: 'Agency owner', value: 'agency_owner' },
@@ -487,6 +667,125 @@ async function endClient(): Promise<void> {
 
 function openBusiness(businessId: string): void {
   void router.push({ name: 'business-detail', params: { businessId } });
+}
+
+function openInvite(client: AgencyClient): void {
+  invitationClient.value = client;
+  inviteForm.value = { email: '', expiresInDays: 7 };
+  createdInvitation.value = null;
+  dialogError.value = null;
+  inviteDialog.value = true;
+}
+
+async function createInvitation(): Promise<void> {
+  if (!invitationClient.value) {
+    return;
+  }
+
+  saving.value = true;
+  dialogError.value = null;
+
+  try {
+    createdInvitation.value = await workspaceApi.createClientInvitation(
+      agencyId.value,
+      invitationClient.value.businessId,
+      {
+        email: inviteForm.value.email.trim(),
+        expiresInDays: inviteForm.value.expiresInDays,
+      },
+    );
+    notify('Invitation created');
+  } catch (caught) {
+    dialogError.value =
+      caught instanceof ApiError ? caught.message : 'Unable to create the invitation.';
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function openInvitations(client: AgencyClient): Promise<void> {
+  invitationClient.value = client;
+  invitationsList.value = [];
+  invitationsDialog.value = true;
+  await loadInvitations();
+}
+
+async function loadInvitations(): Promise<void> {
+  if (!invitationClient.value) {
+    return;
+  }
+
+  invitationsLoading.value = true;
+
+  try {
+    invitationsList.value = await workspaceApi.listClientInvitations(
+      agencyId.value,
+      invitationClient.value.businessId,
+    );
+  } catch (caught) {
+    notify(caught instanceof ApiError ? caught.message : 'Unable to load invitations.');
+  } finally {
+    invitationsLoading.value = false;
+  }
+}
+
+async function revokeInvitation(invitation: InvitationSummary): Promise<void> {
+  if (!invitationClient.value) {
+    return;
+  }
+
+  try {
+    await workspaceApi.revokeClientInvitation(
+      agencyId.value,
+      invitationClient.value.businessId,
+      invitation.id,
+    );
+    await loadInvitations();
+    notify('Invitation revoked');
+  } catch (caught) {
+    notify(caught instanceof ApiError ? caught.message : 'Unable to revoke the invitation.');
+  }
+}
+
+function showInvitationList(): void {
+  if (!invitationClient.value) {
+    return;
+  }
+
+  const client = invitationClient.value;
+  inviteDialog.value = false;
+  void openInvitations(client);
+}
+
+function startInviteFromList(): void {
+  if (!invitationClient.value) {
+    return;
+  }
+
+  const client = invitationClient.value;
+  invitationsDialog.value = false;
+  openInvite(client);
+}
+
+function copyInvitationLink(link?: string): void {
+  if (!link) {
+    return;
+  }
+
+  void navigator.clipboard?.writeText(link).then(
+    () => notify('Acceptance link copied'),
+    () => notify('Copy is not available in this browser'),
+  );
+}
+
+function invitationColor(status: string): string {
+  if (status === 'pending') {
+    return 'warning';
+  }
+  if (status === 'accepted') {
+    return 'success';
+  }
+  return 'default';
 }
 
 onMounted(load);

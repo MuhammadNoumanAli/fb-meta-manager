@@ -9,6 +9,9 @@ import type {
   BusinessMember,
   CreateAgencyPayload,
   CreateBusinessPayload,
+  CreateInvitationPayload,
+  InvitationSummary,
+  UpdateBusinessPayload,
 } from '@/types/workspace';
 
 export const workspaceApi = {
@@ -23,7 +26,7 @@ export const workspaceApi = {
   getBusiness: (businessId: string) =>
     apiRequest<BusinessDetail>(`/businesses/${businessId}`),
 
-  updateBusiness: (businessId: string, payload: Partial<CreateBusinessPayload>) =>
+  updateBusiness: (businessId: string, payload: UpdateBusinessPayload) =>
     apiRequest<BusinessDetail>(`/businesses/${businessId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
@@ -88,6 +91,34 @@ export const workspaceApi = {
     apiRequest<AgencyClient[]>(`/agencies/${agencyId}/clients/${clientBusinessId}`, {
       method: 'DELETE',
     }),
+
+  listClientInvitations: (agencyId: string, clientBusinessId: string) =>
+    apiRequest<InvitationSummary[]>(
+      `/agencies/${agencyId}/clients/${clientBusinessId}/invitations`,
+    ),
+
+  createClientInvitation: (
+    agencyId: string,
+    clientBusinessId: string,
+    payload: CreateInvitationPayload,
+  ) =>
+    apiRequest<InvitationSummary>(
+      `/agencies/${agencyId}/clients/${clientBusinessId}/invitations`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    ),
+
+  revokeClientInvitation: (
+    agencyId: string,
+    clientBusinessId: string,
+    invitationId: string,
+  ) =>
+    apiRequest<InvitationSummary>(
+      `/agencies/${agencyId}/clients/${clientBusinessId}/invitations/${invitationId}`,
+      { method: 'DELETE' },
+    ),
 
   listAgencyMembers: (agencyId: string) =>
     apiRequest<AgencyMember[]>(`/agencies/${agencyId}/members`),

@@ -85,6 +85,18 @@ const router = createRouter({
       ],
     },
     {
+      path: '/invitations/:token',
+      component: AuthLayout,
+      children: [
+        {
+          path: '',
+          name: 'accept-invitation',
+          component: () => import('@/views/invitations/InvitationView.vue'),
+          meta: { title: 'Client invitation' },
+        },
+      ],
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/',
     },

@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia';
 import { ApiError, authToken } from '@/services/api/client';
 import { authApi } from '@/services/api/auth.api';
+import { invitationsApi } from '@/services/api/invitations.api';
 import type {
   LoginPayload,
   RegisterPayload,
   UserProfile,
   WorkspaceSummary,
 } from '@/types/auth';
+import type { AcceptInvitationPayload } from '@/types/workspace';
 
 interface AuthState {
   user: UserProfile | null;
@@ -73,6 +75,21 @@ export const useAuthStore = defineStore('auth', {
       this.user = current.user;
       this.workspaces = current.workspaces;
       this.initialized = true;
+    },
+
+    async acceptInvitation(
+      token: string,
+      payload: AcceptInvitationPayload,
+    ): Promise<string> {
+      const response = await invitationsApi.accept(token, payload);
+      authToken.set(response.accessToken);
+      this.user = response.user;
+      const current = await authApi.me();
+      this.user = current.user;
+      this.workspaces = current.workspaces;
+      this.initialized = true;
+
+      return response.businessId;
     },
 
     async signOut(): Promise<void> {

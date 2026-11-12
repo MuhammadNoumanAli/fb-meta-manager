@@ -1,4 +1,4 @@
-import type { AccessType } from './auth';
+import type { AccessType, UserProfile } from './auth';
 
 export interface Business {
   id: string;
@@ -7,6 +7,11 @@ export interface Business {
   slug: string;
   timezone: string;
   currency: string;
+  industry: string | null;
+  description: string | null;
+  website: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -84,8 +89,61 @@ export interface CreateBusinessPayload {
   name: string;
   timezone?: string;
   currency?: string;
+  industry?: string;
+  description?: string;
+  website?: string;
+  contactEmail?: string;
+  contactPhone?: string;
 }
+
+export type UpdateBusinessPayload = Partial<CreateBusinessPayload>;
 
 export interface CreateAgencyPayload {
   name: string;
+}
+
+export type InvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
+
+export interface InvitationSummary {
+  id: string;
+  email: string;
+  status: InvitationStatus;
+  expiresAt: string;
+  createdAt: string;
+  acceptedAt: string | null;
+  token?: string;
+  acceptanceUrl?: string;
+}
+
+export interface InvitationPreview {
+  email: string;
+  agencyName: string;
+  businessName: string;
+  businessSlug: string;
+  expiresAt: string;
+  hasAccount: boolean;
+}
+
+export interface CreateInvitationPayload {
+  email: string;
+  expiresInDays?: number;
+}
+
+export interface AcceptInvitationPayload {
+  password: string;
+  firstName?: string;
+  lastName?: string;
+  timezone?: string;
+  currency?: string;
+  industry?: string;
+  description?: string;
+  website?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+}
+
+export interface AcceptInvitationResult {
+  user: UserProfile;
+  accessToken: string;
+  businessId: string;
 }
