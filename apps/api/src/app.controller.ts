@@ -12,7 +12,7 @@ export class AppController {
   getInfo() {
     return {
       name: 'AdPilot API',
-      version: '0.1.0',
+      version: '0.2.0',
       environment: process.env.NODE_ENV ?? 'development',
       docs: '/api/docs',
       health: '/api/v1/health',
