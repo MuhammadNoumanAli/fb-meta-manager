@@ -91,6 +91,13 @@
       <v-card border flat class="mt-4">
         <v-tabs v-model="tab" color="primary">
           <v-tab value="members" prepend-icon="mdi-account-group-outline">Members</v-tab>
+          <v-tab
+            v-if="canReadIntegrations"
+            value="integrations"
+            prepend-icon="mdi-connection"
+          >
+            Integrations
+          </v-tab>
           <v-tab v-if="canReadAudit" value="audit" prepend-icon="mdi-history">Audit log</v-tab>
         </v-tabs>
 
@@ -175,6 +182,13 @@
                 </tbody>
               </v-table>
             </v-card-text>
+          </v-window-item>
+
+          <v-window-item v-if="canReadIntegrations" value="integrations">
+            <BusinessIntegrationsTab
+              :business-id="businessId"
+              :can-manage="canManageIntegrations"
+            />
           </v-window-item>
 
           <v-window-item v-if="canReadAudit" value="audit">
@@ -308,7 +322,7 @@
         </v-card>
       </v-dialog>
 
-      <v-snackbar v-model="snackbar" color="success" timeout="2500">
+      <v-snackbar v-model="snackbar" :color="snackbarColor" timeout="2500">
         {{ snackbarMessage }}
       </v-snackbar>
     </template>
@@ -319,7 +333,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import BusinessIntegrationsTab from '@/components/integrations/BusinessIntegrationsTab.vue';
 import { ApiError } from '@/services/api/client';
 import { workspaceApi } from '@/services/api/workspace.api';
 import { useAuthStore } from '@/stores/auth';
@@ -329,6 +344,7 @@ import { formatAccessType, formatRole, formatStatus } from '@/utils/labels';
 import { currencies, timezones } from '@/utils/options';
 
 const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 const businessId = computed(() => String(route.params.businessId));
 
@@ -343,6 +359,7 @@ const dialogError = ref<string | null>(null);
 const tab = ref('members');
 const snackbar = ref(false);
 const snackbarMessage = ref('');
+const snackbarColor = ref('success');
 
 const editDialog = ref(false);
 const memberDialog = ref(false);
@@ -372,14 +389,21 @@ const canManageMembers = computed(
   () => detail.value?.permissions.includes('business.manage_members') ?? false,
 );
 const canReadAudit = computed(() => detail.value?.permissions.includes('audit.read') ?? false);
+const canReadIntegrations = computed(
+  () => detail.value?.permissions.includes('integration.read') ?? false,
+);
+const canManageIntegrations = computed(
+  () => detail.value?.permissions.includes('integration.manage') ?? false,
+);
 
 function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString();
 }
 
-function notify(message: string): void {
+function notify(message: string, color = 'success'): void {
   snackbarMessage.value = message;
+  snackbarColor.value = color;
   snackbar.value = true;
 }
 
@@ -521,5 +545,37 @@ watch(tab, (value) => {
   }
 });
 
-onMounted(load);
+function applyIntegrationQuery(): void {
+  const meta = route.query.meta;
+
+  if (typeof meta === 'string') {
+    if (canReadIntegrations.value) {
+      tab.value = 'integrations';
+
+      if (meta === 'connected') {
+        notify('Meta connected. Connected assets are ready.');
+      } else if (meta === 'reconnected') {
+        notify('Meta reconnected. Connected assets refreshed.');
+      } else if (meta === 'error') {
+        notify(
+          `Meta connection failed (${String(route.query.reason ?? 'unknown')}).`,
+          'error',
+        );
+      }
+    }
+
+    void router.replace({ path: route.path, query: {} });
+    return;
+  }
+
+  if (route.query.tab === 'integrations' && canReadIntegrations.value) {
+    tab.value = 'integrations';
+    void router.replace({ path: route.path, query: {} });
+  }
+}
+
+onMounted(async () => {
+  await load();
+  applyIntegrationQuery();
+});
 </script>

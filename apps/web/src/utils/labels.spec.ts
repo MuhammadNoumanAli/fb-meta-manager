@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { formatAccessType, formatRole, formatStatus } from './labels';
+import {
+  formatAccessType,
+  formatConnectionMode,
+  formatIntegrationEvent,
+  formatIntegrationHealth,
+  formatRole,
+  formatStatus,
+  integrationHealthColor,
+} from './labels';
 
 describe('formatRole', () => {
   it('maps system role keys to friendly labels', () => {
@@ -24,5 +32,21 @@ describe('formatStatus', () => {
   it('capitalises statuses and expands underscores', () => {
     expect(formatStatus('active')).toBe('Active');
     expect(formatStatus('pending_review')).toBe('Pending review');
+  });
+});
+
+describe('integration labels', () => {
+  it('describes connection health and colours', () => {
+    expect(formatIntegrationHealth('healthy')).toBe('Connected');
+    expect(formatIntegrationHealth('revoked')).toBe('Access revoked');
+    expect(integrationHealthColor('healthy')).toBe('success');
+    expect(integrationHealthColor('revoked')).toBe('error');
+  });
+
+  it('describes connection modes and token events', () => {
+    expect(formatConnectionMode('system_user')).toBe('System User token');
+    expect(formatConnectionMode(null)).toBe('Not connected');
+    expect(formatIntegrationEvent('permissions_changed')).toBe('Permissions changed');
+    expect(formatIntegrationEvent('disconnected')).toBe('Disconnected');
   });
 });
