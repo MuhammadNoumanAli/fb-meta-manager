@@ -37,6 +37,10 @@ import { UsersModule } from './modules/users/users.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const isProduction = config.get<string>('nodeEnv') === 'production';
+        // The pretty transport starts a worker thread that keeps Jest alive.
+        const isTest =
+          config.get<string>('nodeEnv') === 'test' ||
+          process.env.JEST_WORKER_ID !== undefined;
 
         return {
           pinoHttp: {
@@ -57,16 +61,17 @@ import { UsersModule } from './modules/users/users.module';
               res.setHeader('x-request-id', id);
               return id;
             },
-            transport: isProduction
-              ? undefined
-              : {
-                  target: 'pino-pretty',
-                  options: {
-                    singleLine: true,
-                    colorize: true,
-                    translateTime: 'SYS:HH:MM:ss.l',
+            transport:
+              isProduction || isTest
+                ? undefined
+                : {
+                    target: 'pino-pretty',
+                    options: {
+                      singleLine: true,
+                      colorize: true,
+                      translateTime: 'SYS:HH:MM:ss.l',
+                    },
                   },
-                },
           },
         };
       },

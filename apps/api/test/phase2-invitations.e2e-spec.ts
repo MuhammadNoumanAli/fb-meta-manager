@@ -17,6 +17,8 @@ import { User } from '../src/database/entities/user.entity';
 const API = '/api/v1';
 const PASSWORD = 'Str0ngPassw0rd!';
 
+jest.setTimeout(30_000);
+
 interface Session {
   userId: string;
   email: string;
