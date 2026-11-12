@@ -33,6 +33,21 @@ export class Business {
   @Column({ length: 3, default: 'MYR' })
   currency: string;
 
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  industry: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  description: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  website: string | null;
+
+  @Column({ name: 'contact_email', type: 'varchar', length: 150, nullable: true })
+  contactEmail: string | null;
+
+  @Column({ name: 'contact_phone', type: 'varchar', length: 32, nullable: true })
+  contactPhone: string | null;
+
   @Column({ length: 20, default: 'active' })
   status: string;
 

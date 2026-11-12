@@ -8,6 +8,7 @@ import { RoleScope } from '../../common/enums/role-scope.enum';
 import { TenantType } from '../../common/enums/tenant-type.enum';
 import type { RequestContext } from '../../common/utilities/request-context';
 import { buildUniqueSlug } from '../../common/utilities/slug';
+import { normalizeOptionalText } from '../../common/utilities/text';
 import { AgencyClient } from '../../database/entities/agency-client.entity';
 import { BusinessUser } from '../../database/entities/business-user.entity';
 import { Business } from '../../database/entities/business.entity';
@@ -55,6 +56,11 @@ export class BusinessesService {
         slug: buildUniqueSlug(dto.name),
         timezone: dto.timezone ?? 'UTC',
         currency: dto.currency ?? 'MYR',
+        industry: normalizeOptionalText(dto.industry),
+        description: normalizeOptionalText(dto.description),
+        website: normalizeOptionalText(dto.website),
+        contactEmail: normalizeOptionalText(dto.contactEmail),
+        contactPhone: normalizeOptionalText(dto.contactPhone),
       });
       await manager.save(created);
 
@@ -118,6 +124,11 @@ export class BusinessesService {
         slug: buildUniqueSlug(dto.name),
         timezone: dto.timezone ?? 'UTC',
         currency: dto.currency ?? 'MYR',
+        industry: normalizeOptionalText(dto.industry),
+        description: normalizeOptionalText(dto.description),
+        website: normalizeOptionalText(dto.website),
+        contactEmail: normalizeOptionalText(dto.contactEmail),
+        contactPhone: normalizeOptionalText(dto.contactPhone),
       });
       await manager.save(created);
 
@@ -176,6 +187,21 @@ export class BusinessesService {
       ...(dto.name !== undefined ? { name: dto.name } : {}),
       ...(dto.timezone !== undefined ? { timezone: dto.timezone } : {}),
       ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
+      ...(dto.industry !== undefined
+        ? { industry: normalizeOptionalText(dto.industry) }
+        : {}),
+      ...(dto.description !== undefined
+        ? { description: normalizeOptionalText(dto.description) }
+        : {}),
+      ...(dto.website !== undefined
+        ? { website: normalizeOptionalText(dto.website) }
+        : {}),
+      ...(dto.contactEmail !== undefined
+        ? { contactEmail: normalizeOptionalText(dto.contactEmail?.toLowerCase()) }
+        : {}),
+      ...(dto.contactPhone !== undefined
+        ? { contactPhone: normalizeOptionalText(dto.contactPhone) }
+        : {}),
     });
 
     await this.businesses.save(business);

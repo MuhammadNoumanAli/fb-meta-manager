@@ -18,6 +18,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BusinessesModule } from './modules/businesses/businesses.module';
 import { HealthModule } from './modules/health/health.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
 import { QueuesModule } from './modules/queues/queues.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { UsersModule } from './modules/users/users.module';
@@ -120,6 +121,7 @@ import { UsersModule } from './modules/users/users.module';
     UsersModule,
     BusinessesModule,
     AgenciesModule,
+    InvitationsModule,
   ],
   controllers: [AppController],
   providers: [

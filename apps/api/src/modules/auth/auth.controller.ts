@@ -15,6 +15,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { getRequestContext } from '../../common/utilities/request-context';
 import { AuthService, type AuthResult } from './auth.service';
 import { REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH } from './auth.constants';
+import { writeRefreshCookie } from './session';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -109,15 +110,11 @@ export class AuthController {
   }
 
   private completeSession(result: AuthResult, response: Response) {
-    const secure = this.configService.get<string>('nodeEnv') === 'production';
-
-    response.cookie(REFRESH_COOKIE_NAME, result.refreshToken, {
-      httpOnly: true,
-      secure,
-      sameSite: 'lax',
-      path: REFRESH_COOKIE_PATH,
-      expires: result.refreshExpiresAt,
-    });
+    writeRefreshCookie(
+      response,
+      result,
+      this.configService.get<string>('nodeEnv'),
+    );
 
     return {
       user: result.user,

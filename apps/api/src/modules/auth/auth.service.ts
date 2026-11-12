@@ -19,7 +19,7 @@ import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { hashToken, TokensService, type IssuedTokens } from './tokens.service';
 
-const PASSWORD_COST = 12;
+export const PASSWORD_COST = 12;
 const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
 
 export interface PublicUser {
