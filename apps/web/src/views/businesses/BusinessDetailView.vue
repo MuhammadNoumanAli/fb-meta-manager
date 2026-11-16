@@ -91,6 +91,9 @@
       <v-card border flat class="mt-4">
         <v-tabs v-model="tab" color="primary">
           <v-tab value="members" prepend-icon="mdi-account-group-outline">Members</v-tab>
+          <v-tab v-if="canReadLeads" value="leads" prepend-icon="mdi-account-multiple-plus-outline">
+            Leads
+          </v-tab>
           <v-tab
             v-if="canReadIntegrations"
             value="integrations"
@@ -182,6 +185,10 @@
                 </tbody>
               </v-table>
             </v-card-text>
+          </v-window-item>
+
+          <v-window-item v-if="canReadLeads" value="leads">
+            <LeadsTab :business-id="businessId" :can-manage="canManageLeads" />
           </v-window-item>
 
           <v-window-item v-if="canReadIntegrations" value="integrations">
@@ -335,6 +342,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import BusinessIntegrationsTab from '@/components/integrations/BusinessIntegrationsTab.vue';
+import LeadsTab from '@/components/leads/LeadsTab.vue';
 import { ApiError } from '@/services/api/client';
 import { workspaceApi } from '@/services/api/workspace.api';
 import { useAuthStore } from '@/stores/auth';
@@ -389,6 +397,8 @@ const canManageMembers = computed(
   () => detail.value?.permissions.includes('business.manage_members') ?? false,
 );
 const canReadAudit = computed(() => detail.value?.permissions.includes('audit.read') ?? false);
+const canReadLeads = computed(() => detail.value?.permissions.includes('lead.read') ?? false);
+const canManageLeads = computed(() => detail.value?.permissions.includes('lead.manage') ?? false);
 const canReadIntegrations = computed(
   () => detail.value?.permissions.includes('integration.read') ?? false,
 );
@@ -564,6 +574,12 @@ function applyIntegrationQuery(): void {
       }
     }
 
+    void router.replace({ path: route.path, query: {} });
+    return;
+  }
+
+  if (route.query.tab === 'leads' && canReadLeads.value) {
+    tab.value = 'leads';
     void router.replace({ path: route.path, query: {} });
     return;
   }

@@ -300,6 +300,72 @@
         </v-list-item>
       </v-list>
 
+      <v-divider class="my-6" />
+
+      <div class="d-flex align-center justify-space-between mb-2">
+        <div>
+          <div class="text-subtitle-1 font-weight-medium">Webhook deliveries</div>
+          <div class="text-body-2 text-medium-emphasis">
+            Inbound Meta Lead Ads events, processing status and retry controls.
+          </div>
+        </div>
+        <v-btn
+          size="small"
+          variant="text"
+          prepend-icon="mdi-refresh"
+          :loading="webhooksLoading"
+          @click="loadWebhooks"
+        >
+          Refresh
+        </v-btn>
+      </div>
+
+      <v-table v-if="webhookEvents.length" density="compact">
+        <thead>
+          <tr>
+            <th>Received</th>
+            <th>Field</th>
+            <th>Status</th>
+            <th>Attempts</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="event in webhookEvents" :key="event.id">
+            <td class="text-caption">{{ formatDateTime(event.receivedAt) }}</td>
+            <td class="text-caption">{{ event.field || event.objectType }}</td>
+            <td>
+              <v-chip
+                size="x-small"
+                :color="webhookEventStatusColor(event.status)"
+                variant="tonal"
+              >
+                {{ formatWebhookEventStatus(event.status) }}
+              </v-chip>
+              <div v-if="event.lastError" class="text-caption text-error mt-1">
+                {{ event.lastError }}
+              </div>
+            </td>
+            <td class="text-caption">{{ event.attempts }}</td>
+            <td class="text-right">
+              <v-btn
+                v-if="canManage && event.status === 'failed'"
+                size="small"
+                variant="text"
+                color="primary"
+                :loading="retryingEventId === event.id"
+                @click="retryWebhook(event)"
+              >
+                Retry
+              </v-btn>
+            </td>
+          </tr>
+        </tbody>
+      </v-table>
+      <div v-else class="text-body-2 text-medium-emphasis">
+        No webhook deliveries have been recorded for this business yet.
+      </div>
+
       <v-dialog v-model="systemDialog" max-width="520">
         <v-card>
           <v-card-title class="pt-5">Use a System User token</v-card-title>
@@ -381,18 +447,22 @@
 import { computed, onMounted, ref } from 'vue';
 import { ApiError } from '@/services/api/client';
 import { integrationsApi } from '@/services/api/integrations.api';
+import { leadsApi } from '@/services/api/leads.api';
 import type {
   MetaAsset,
   MetaIntegrationOverview,
   MetaTokenEvent,
 } from '@/types/integrations';
+import type { MetaWebhookEvent } from '@/types/leads';
 import { formatDateTime } from '@/utils/format';
 import {
   formatConnectionMode,
   formatIntegrationEvent,
   formatIntegrationHealth,
   formatStatus,
+  formatWebhookEventStatus,
   integrationHealthColor,
+  webhookEventStatusColor,
 } from '@/utils/labels';
 
 type ActionKey = 'connect' | 'validate' | 'discover' | 'disconnect' | 'system-user';
@@ -404,8 +474,11 @@ const props = defineProps<{
 
 const overview = ref<MetaIntegrationOverview | null>(null);
 const events = ref<MetaTokenEvent[]>([]);
+const webhookEvents = ref<MetaWebhookEvent[]>([]);
 const loading = ref(true);
 const eventsLoading = ref(false);
+const webhooksLoading = ref(false);
+const retryingEventId = ref<string | null>(null);
 const busy = ref<ActionKey | null>(null);
 const loadError = ref<string | null>(null);
 const actionError = ref<string | null>(null);
@@ -493,6 +566,34 @@ async function loadEvents(): Promise<void> {
     notify(describeError(caught, 'Unable to load connection activity.'), true);
   } finally {
     eventsLoading.value = false;
+  }
+}
+
+async function loadWebhooks(): Promise<void> {
+  webhooksLoading.value = true;
+
+  try {
+    webhookEvents.value = await leadsApi.listWebhookEvents(props.businessId);
+  } catch (caught) {
+    notify(describeError(caught, 'Unable to load webhook deliveries.'), true);
+  } finally {
+    webhooksLoading.value = false;
+  }
+}
+
+async function retryWebhook(event: MetaWebhookEvent): Promise<void> {
+  retryingEventId.value = event.id;
+
+  try {
+    await leadsApi.retryWebhookEvent(props.businessId, event.id);
+    notify('Webhook event queued for retry.');
+    window.setTimeout(() => {
+      void loadWebhooks();
+    }, 1500);
+  } catch (caught) {
+    notify(describeError(caught, 'Unable to retry the webhook event.'), true);
+  } finally {
+    retryingEventId.value = null;
   }
 }
 
@@ -606,5 +707,7 @@ async function connectSystemUser(): Promise<void> {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  void Promise.all([load(), loadWebhooks()]);
+});
 </script>

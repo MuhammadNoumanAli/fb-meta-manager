@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   formatAccessType,
   formatConnectionMode,
+  formatConsent,
   formatIntegrationEvent,
   formatIntegrationHealth,
+  formatLeadSource,
   formatRole,
   formatStatus,
+  formatWebhookEventStatus,
   integrationHealthColor,
+  leadStatusColor,
+  webhookEventStatusColor,
 } from './labels';
 
 describe('formatRole', () => {
@@ -48,5 +53,21 @@ describe('integration labels', () => {
     expect(formatConnectionMode(null)).toBe('Not connected');
     expect(formatIntegrationEvent('permissions_changed')).toBe('Permissions changed');
     expect(formatIntegrationEvent('disconnected')).toBe('Disconnected');
+  });
+});
+
+describe('lead labels', () => {
+  it('names lead sources and consent states', () => {
+    expect(formatLeadSource('meta_lead_ads')).toBe('Meta Lead Ads');
+    expect(formatLeadSource('website_api')).toBe('Website API');
+    expect(formatConsent('granted')).toBe('Consent granted');
+    expect(formatConsent('unknown')).toBe('Consent unknown');
+  });
+
+  it('colours lead and webhook statuses', () => {
+    expect(leadStatusColor('new')).toBe('info');
+    expect(leadStatusColor('converted')).toBe('success');
+    expect(formatWebhookEventStatus('processed')).toBe('Processed');
+    expect(webhookEventStatusColor('failed')).toBe('error');
   });
 });
