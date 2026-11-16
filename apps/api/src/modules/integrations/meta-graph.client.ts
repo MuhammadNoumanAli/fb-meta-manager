@@ -42,6 +42,23 @@ export interface MetaDiscoveryResult {
   adAccounts: MetaAdAccountResult[];
 }
 
+export interface MetaLeadFieldDatum {
+  name: string;
+  values: string[];
+}
+
+export interface MetaLeadDetails {
+  id: string;
+  createdTime: string | null;
+  formId: string | null;
+  adId: string | null;
+  adSetId: string | null;
+  campaignId: string | null;
+  pageId: string | null;
+  isOrganic: boolean | null;
+  fields: MetaLeadFieldDatum[];
+}
+
 export class MetaGraphError extends Error {
   constructor(
     message: string,
@@ -258,6 +275,44 @@ export class MetaGraphClient {
         timezoneName: entry.timezone_name ?? null,
         businessId: entry.business?.id ?? null,
       })),
+    };
+  }
+
+  /** Retrieves the field data for a Lead Ads lead. */
+  async getLeadDetails(leadgenId: string, accessToken: string): Promise<MetaLeadDetails> {
+    const response = await this.request<{
+      id?: string;
+      created_time?: string;
+      form_id?: string;
+      ad_id?: string;
+      adset_id?: string;
+      campaign_id?: string;
+      page_id?: string;
+      is_organic?: boolean;
+      field_data?: Array<{ name?: string; values?: string[] }>;
+    }>(encodeURIComponent(leadgenId), {
+      fields:
+        'id,created_time,field_data,form_id,ad_id,adset_id,campaign_id,page_id,is_organic',
+      access_token: accessToken,
+    });
+
+    return {
+      id: response.id ?? leadgenId,
+      createdTime: response.created_time ?? null,
+      formId: response.form_id ?? null,
+      adId: response.ad_id ?? null,
+      adSetId: response.adset_id ?? null,
+      campaignId: response.campaign_id ?? null,
+      pageId: response.page_id ?? null,
+      isOrganic: response.is_organic ?? null,
+      fields: (response.field_data ?? [])
+        .filter((datum) => typeof datum.name === 'string')
+        .map((datum) => ({
+          name: datum.name as string,
+          values: (datum.values ?? []).filter(
+            (value): value is string => typeof value === 'string',
+          ),
+        })),
     };
   }
 

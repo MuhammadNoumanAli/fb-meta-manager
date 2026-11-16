@@ -36,6 +36,6 @@ import { MetaOAuthCallbackController } from './meta-oauth-callback.controller';
     MetaIntegrationMonitorController,
   ],
   providers: [MetaIntegrationsService, MetaGraphClient, IntegrationCryptoService],
-  exports: [MetaIntegrationsService],
+  exports: [MetaIntegrationsService, MetaGraphClient, IntegrationCryptoService],
 })
 export class IntegrationsModule {}

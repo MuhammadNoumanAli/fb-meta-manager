@@ -20,9 +20,11 @@ import { BusinessesModule } from './modules/businesses/businesses.module';
 import { HealthModule } from './modules/health/health.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { LeadsModule } from './modules/leads/leads.module';
 import { QueuesModule } from './modules/queues/queues.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { UsersModule } from './modules/users/users.module';
+import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -129,6 +131,8 @@ import { UsersModule } from './modules/users/users.module';
     AgenciesModule,
     InvitationsModule,
     IntegrationsModule,
+    LeadsModule,
+    WebhooksModule,
   ],
   controllers: [AppController],
   providers: [
