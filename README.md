@@ -71,8 +71,8 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 4. Start Redis with `maxmemory-policy noeviction` (required by BullMQ). With Docker the
    compose file already applies this setting.
 
-5. Apply database migrations (creates the identity, tenancy, invitation and Meta integration
-   schema, and seeds roles/permissions):
+5. Apply database migrations (creates the identity, tenancy, invitation, Meta integration and
+   webhook/lead schema, and seeds roles/permissions):
 
    ```bash
    npm run migration:run
@@ -121,6 +121,14 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 | `DELETE /api/v1/businesses/:businessId/integrations/meta` | Disconnect and revoke access |
 | `GET /api/v1/integrations/meta/oauth/callback` | Public Meta OAuth callback (state protected) |
 | `POST /api/v1/integrations/meta/monitor/sweep` | Platform-only token validation sweep |
+| `GET/POST /api/v1/webhooks/meta` | Meta subscription challenge and signed delivery intake |
+| `GET /api/v1/businesses/:businessId/leads[/:leadId]` | Lead list and detail |
+| `PATCH /api/v1/businesses/:businessId/leads/:leadId` | Update lead status |
+| `GET /api/v1/businesses/:businessId/leads/sync-logs` | Lead intake history |
+| `GET/POST/DELETE /api/v1/businesses/:businessId/lead-sources[/website]` | Lead sources and website API keys |
+| `POST /api/v1/leads/intake` | Public website lead intake (keyed) |
+| `GET /api/v1/businesses/:businessId/integrations/meta/webhook-events[/:eventId]` | Webhook delivery history and detail |
+| `POST /api/v1/businesses/:businessId/integrations/meta/webhook-events/:eventId/retry` | Retry a failed delivery |
 | `GET /api/v1/audit-logs?businessId=` | Audit trail for a business |
 | `GET /api/docs` | Swagger UI |
 
@@ -177,10 +185,35 @@ accounts. Owners and admins can connect, reconnect, refresh, validate or disconn
 - Health values are `not_connected`, `healthy`, `attention`, `expired` and `revoked`. The
   platform-only `monitor/sweep` endpoint is the foundation for scheduled token monitoring.
 
-Configure `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI` and
-`INTEGRATION_ENCRYPTION_KEY` (32 bytes as hex or base64). `META_OAUTH_SCOPES` controls the
-requested permissions; `META_GRAPH_BASE_URL` and `META_DIALOG_BASE_URL` allow sandbox or
-proxy deployments. Production startup fails without a valid encryption key.
+Configure `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`,
+`META_WEBHOOK_VERIFY_TOKEN` and `INTEGRATION_ENCRYPTION_KEY` (32 bytes as hex or base64).
+`META_OAUTH_SCOPES` controls the requested permissions; `META_GRAPH_BASE_URL` and
+`META_DIALOG_BASE_URL` allow sandbox or proxy deployments. Production startup fails without a
+valid encryption key.
+
+## Meta webhooks and lead capture
+
+Lead Ads submissions arrive through `POST /webhooks/meta` and website forms through
+`POST /leads/intake`. Both feed the same lead CRM, visible in the **Leads** tab on the
+business detail screen.
+
+- Register the callback in the Meta app with the `leadgen` subscription and the same
+  `META_WEBHOOK_VERIFY_TOKEN`. The API answers the `hub.challenge` handshake and verifies
+  `X-Hub-Signature-256` over the raw body with `META_APP_SECRET`.
+- Every delivery is stored in `webhook_events` with a deterministic idempotency key before a
+  fast `200` response. The `lead-processing` BullMQ worker resolves the Facebook Page to a
+  business, decrypts the stored token, fetches the lead from the Graph API and normalises the
+  form fields.
+- Duplicate deliveries are ignored at the event level, and leads are deduplicated by Meta
+  leadgen ID. Distinct leadgen IDs are never merged just because they share a phone or email.
+- Website forms authenticate with an `x-adpilot-lead-key` header. Keys are issued, rotated and
+  revoked from the Leads tab; only a SHA-256 hash and the last four characters are stored, and
+  the raw key is shown once. Supply an optional `externalId` for idempotent retries.
+- Failed events stay `failed` with the error and can be retried from the Integrations tab or
+  `POST .../webhook-events/:eventId/retry`. Processing attempts, durations and messages are
+  recorded in `webhook_processing_logs`; intake outcomes are recorded in `lead_sync_logs`.
+- Lead details need the `leads_retrieval` permission on the Meta connection. The API never
+  returns Meta tokens or their ciphertext, and all lead routes enforce business isolation.
 
 ## Scripts
 
@@ -212,8 +245,10 @@ npm run migration:generate -w @adpilot/api -- src/database/migrations/DescribeCh
   configured through `apps/api/.env`. They cover registration, login, refresh rotation and
   replay rejection, password reset, RBAC, tenant isolation, the agency/client access model,
   client invitations (creation, preview, acceptance, expiry, revocation, superseding and
-  audit), client ownership after an agency relationship ends, and Meta OAuth, encrypted token
-  storage, permission drift, asset discovery, revoked access and reauthorization. Meta calls
+  audit), client ownership after an agency relationship ends, Meta OAuth, encrypted token
+  storage, permission drift, asset discovery, revoked access and reauthorization, and the
+  webhook/lead pipeline (challenge verification, HMAC rejection, idempotent deliveries, lead
+  normalisation, website keys and intake, failed-event retry and tenant isolation). Meta calls
   are mocked, so no live credentials are required.
 - Frontend unit tests run with Vitest.
 - CI runs the e2e suite in a dedicated job with MySQL 8 and Redis service containers and
@@ -232,4 +267,8 @@ in [DEVELOPMENT_PROGRESS.md](DEVELOPMENT_PROGRESS.md).
 - Meta access tokens are encrypted at rest with AES-256-GCM and a versioned key; only the
   ciphertext is persisted, and `INTEGRATION_ENCRYPTION_KEY` is required in production.
 - OAuth states are hashed, single use and expire after 10 minutes.
+- Meta webhook signatures are verified against the raw request body with a timing-safe
+  comparison; rejected deliveries are never stored.
+- Website lead keys are stored only as SHA-256 hashes with a four-character hint and can be
+  rotated or revoked at any time.
 - Tenant isolation is enforced in the backend, never by frontend filtering alone.

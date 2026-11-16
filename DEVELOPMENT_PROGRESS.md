@@ -1,9 +1,122 @@
 # AdPilot Development Progress
 
-**Current phase:** Phase 3 — Meta Authentication and Asset Integration (complete)
-**Last updated:** 2026-11-12
-**API version:** 0.4.0
+**Current phase:** Phase 4 — Meta Webhooks and Lead Integration (complete)
+**Last updated:** 2026-11-17
+**API version:** 0.5.0
 **Blueprint:** [docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md](docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md)
+
+---
+
+## Phase 4 — Meta Webhooks and Lead Integration
+
+### Scope delivered
+
+- [x] Public Meta webhook subscription challenge (`hub.mode`, `hub.verify_token`, `hub.challenge`)
+- [x] Raw-body HMAC-SHA256 verification of `X-Hub-Signature-256` on every delivery
+- [x] Immutable webhook event storage with provider-scoped idempotency keys
+- [x] Fast `200` acknowledgement after storage; Graph work runs on the `lead-processing` queue
+- [x] Leadgen processing: page→business resolution, encrypted token decryption, lead detail retrieval and field normalisation
+- [x] Lead-level dedupe with a SHA-256 of the Meta leadgen ID and a unique index
+- [x] Lead sync logs and webhook processing logs for every intake attempt
+- [x] Lead list, search, filter, detail and status update APIs with an audit trail
+- [x] Website lead intake API with one-time, hash-only keys that can be issued, rotated and revoked
+- [x] Business-scoped webhook delivery history, event detail and retry for failed events
+- [x] Frontend Leads tab with filters, inline status updates, detail dialog, key management and intake activity
+- [x] Integrations tab webhook deliveries table with status, attempts, error and retry controls
+
+### Database migrations
+
+| Migration | Status |
+|---|---|
+| `1765000000000-Phase4LeadWebhooks` | Applied locally |
+
+Adds `webhook_events`, `webhook_processing_logs`, `lead_sources`, `leads` and `lead_sync_logs`
+with unique dedupe/idempotency indices. Deleting a business cascades leads, sources, sync logs
+and webhook events; authorization references are `SET NULL` when a connection is removed.
+
+### API endpoints
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/webhooks/meta` | Public (verify token) | Answer the Meta subscription challenge |
+| POST | `/api/v1/webhooks/meta` | Public (signature) | Receive signed webhook deliveries |
+| GET | `/api/v1/businesses/:businessId/leads` | `lead.read` | List, search, filter and paginate leads |
+| GET | `/api/v1/businesses/:businessId/leads/sync-logs` | `lead.read` | Recent intake history |
+| GET | `/api/v1/businesses/:businessId/leads/:leadId` | `lead.read` | Lead detail |
+| PATCH | `/api/v1/businesses/:businessId/leads/:leadId` | `lead.manage` | Update lead status |
+| GET | `/api/v1/businesses/:businessId/lead-sources` | `lead.read` | Configured lead sources and key hints |
+| POST | `/api/v1/businesses/:businessId/lead-sources/website` | `lead.manage` | Issue or rotate the website key |
+| DELETE | `/api/v1/businesses/:businessId/lead-sources/website` | `lead.manage` | Revoke the website key |
+| POST | `/api/v1/leads/intake` | Public (`x-adpilot-lead-key`) | Ingest a website lead |
+| GET | `/api/v1/businesses/:businessId/integrations/meta/webhook-events` | `integration.read` | Webhook delivery history |
+| GET | `/api/v1/businesses/:businessId/integrations/meta/webhook-events/:eventId` | `integration.read` | Delivery detail with processing logs |
+| POST | `/api/v1/businesses/:businessId/integrations/meta/webhook-events/:eventId/retry` | `integration.manage` | Retry a failed or received delivery |
+
+Webhook event statuses are `received`, `processing`, `processed`, `failed` and `ignored`.
+Lead statuses are `new`, `contacted`, `qualified`, `converted` and `disqualified`; consent is
+`unknown`, `granted` or `denied`.
+
+### Frontend screens
+
+| Screen | Route | Status |
+|---|---|---|
+| Business detail — Leads tab (filters, status, detail, website API) | `/businesses/:businessId?tab=leads` | Complete |
+| Business detail — Integrations tab webhook deliveries | `/businesses/:businessId?tab=integrations` | Complete |
+
+### Security properties
+
+- Signatures are verified against the exact raw request bytes with a timing-safe comparison.
+  Missing, malformed or invalid signatures return `403` and nothing is stored; malformed
+  payloads with a valid signature return `400`.
+- The challenge token is compared in constant time and the endpoint echoes only the provided
+  challenge.
+- Webhook events never contain provider credentials. Lead processing decrypts the business
+  token in memory only, and API responses expose neither the token nor its ciphertext.
+- Idempotency is deterministic: `sha256("meta:leadgen:<leadgen_id>")` for lead ads and a hash
+  of the entry/change for other fields. A duplicate delivery cannot create a second event or
+  lead.
+- Website API keys are `adp_` plus 48 random hex characters. Only the SHA-256 hash and the
+  last four characters are persisted; the raw key is returned once and key rotation
+  invalidates the previous key immediately.
+- Leads are deduplicated by source identifier only, never by phone or email, so two distinct
+  Meta leads sharing contact details stay distinct.
+- Every lead, source and webhook-event route resolves the business through the permission
+  guard; cross-tenant access returns `404`.
+- Status changes and retries write audit records (`lead.status_changed`, `webhook_event.retried`).
+
+### Verification
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | Pass (API + web) |
+| Typecheck | `npm run typecheck` | Pass (API + web) |
+| API unit tests | `npm run test -w @adpilot/api` | Pass (4 suites, 19 tests) |
+| Web unit tests | `npm run test -w @adpilot/web` | Pass (3 files, 18 tests) |
+| API e2e (MySQL + Redis) | `npm run test:e2e -w @adpilot/api` | Pass (5 suites, 52 tests) |
+| Build | `npm run build` | Pass (API dist + web dist) |
+| Browser flow | key issue → intake → lead list/detail → intake activity → webhook deliveries | Pass |
+| Acceptance criteria | signed leads processed, duplicates rejected, bad requests rejected, failed event retried | Pass |
+
+### Known issues / limitations
+
+- Live delivery requires a public HTTPS callback URL registered in the Meta app with the
+  `leadgen` subscription and the same verify token. Local verification uses signed fixtures
+  and a mocked Graph client.
+- Lead details require the `leads_retrieval` permission. If it is missing after reauthorization,
+  events fail and remain retryable until the connection is repaired.
+- The queue consumer runs inside the API process. A dedicated worker deployment can be split
+  out when traffic grows; the producer/consumer contract is already isolated.
+- WhatsApp is a reserved lead source and arrives with the messaging phase.
+- Website keys are rotated manually; automatic expiry per key is not implemented.
+
+### Decisions requiring approval
+
+- Webhook processing is at-least-once with dedupe on both the event and the lead, rather than
+  exactly-once delivery. This is the standard Meta webhook contract.
+- Website intake deduplicates only when the client supplies `externalId`; otherwise every
+  submission is accepted.
+- Failed events are retried manually from the UI or API. Duplicate deliveries of a failed
+  event also requeue it automatically.
 
 ---
 
@@ -397,8 +510,8 @@ Migration infrastructure is configured: `apps/api/src/database/data-source.ts` p
 | 0 — Project foundation and discovery | Complete |
 | 1 — Authentication and multi-tenancy | Complete |
 | 2 — Agency client onboarding and invitations | Complete |
-| 3 — Meta authentication and asset integration | Not started |
-| 4 — Meta webhooks and lead integration | Not started |
+| 3 — Meta authentication and asset integration | Complete |
+| 4 — Meta webhooks and lead integration | Complete |
 | 5 — Campaign and advertisement management | Not started |
 | 6 — Approval and budget management | Not started |
 | 7 — Automation and reliability | Not started |
