@@ -17,6 +17,7 @@ import { AdvertisingModule } from './modules/advertising/advertising.module';
 import { AgenciesModule } from './modules/agencies/agencies.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { AutomationModule } from './modules/automation/automation.module';
 import { BudgetsModule } from './modules/budgets/budgets.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BusinessesModule } from './modules/businesses/businesses.module';
@@ -138,6 +139,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     AdvertisingModule,
     ApprovalsModule,
     BudgetsModule,
+    AutomationModule,
     WebhooksModule,
   ],
   controllers: [AppController],
