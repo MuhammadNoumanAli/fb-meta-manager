@@ -369,6 +369,8 @@ const targetOptions = [
   { title: 'Campaign publish', value: 'campaign.publish' },
   { title: 'Campaign status', value: 'campaign.status' },
   { title: 'Budget change', value: 'budget.change' },
+  { title: 'Automation action', value: 'automation.execute' },
+  { title: 'Bulk operation', value: 'bulk.execute' },
 ];
 
 const pendingCount = computed(
@@ -396,6 +398,10 @@ function formatTargetType(targetType: TargetType): string {
       return 'Campaign status';
     case 'budget.change':
       return 'Budget change';
+    case 'automation.execute':
+      return 'Automation action';
+    case 'bulk.execute':
+      return 'Bulk operation';
     default:
       return targetType;
   }

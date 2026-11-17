@@ -107,6 +107,9 @@
           <v-tab v-if="canReadCampaigns" value="budgets" prepend-icon="mdi-cash-multiple">
             Budgets
           </v-tab>
+          <v-tab v-if="canReadCampaigns" value="automation" prepend-icon="mdi-robot-outline">
+            Automation
+          </v-tab>
           <v-tab
             v-if="canReadIntegrations"
             value="integrations"
@@ -227,6 +230,10 @@
               :can-manage="canManageBudgets"
               :default-currency="detail.business.currency"
             />
+          </v-window-item>
+
+          <v-window-item v-if="canReadCampaigns" value="automation">
+            <AutomationTab :business-id="businessId" :can-manage="canUpdateCampaigns" />
           </v-window-item>
 
           <v-window-item v-if="canReadIntegrations" value="integrations">
@@ -380,6 +387,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import ApprovalsTab from '@/components/approvals/ApprovalsTab.vue';
+import AutomationTab from '@/components/automation/AutomationTab.vue';
 import BudgetsTab from '@/components/budgets/BudgetsTab.vue';
 import BusinessIntegrationsTab from '@/components/integrations/BusinessIntegrationsTab.vue';
 import CampaignsTab from '@/components/campaigns/CampaignsTab.vue';
@@ -660,6 +668,12 @@ function applyIntegrationQuery(): void {
 
   if (route.query.tab === 'budgets' && canReadCampaigns.value) {
     tab.value = 'budgets';
+    void router.replace({ path: route.path, query: {} });
+    return;
+  }
+
+  if (route.query.tab === 'automation' && canReadCampaigns.value) {
+    tab.value = 'automation';
     void router.replace({ path: route.path, query: {} });
     return;
   }

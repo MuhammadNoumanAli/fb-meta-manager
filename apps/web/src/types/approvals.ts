@@ -1,4 +1,9 @@
-export type ApprovalTargetType = 'campaign.publish' | 'campaign.status' | 'budget.change';
+export type ApprovalTargetType =
+  | 'campaign.publish'
+  | 'campaign.status'
+  | 'budget.change'
+  | 'automation.execute'
+  | 'bulk.execute';
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'cancelled';
 
