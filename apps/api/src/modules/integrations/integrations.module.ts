@@ -1,5 +1,7 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { QUEUE_NAMES } from '../../common/constants/queues';
 import { Business } from '../../database/entities/business.entity';
 import { IntegrationAuthorization } from '../../database/entities/integration-authorization.entity';
 import { IntegrationTokenEvent } from '../../database/entities/integration-token-event.entity';
@@ -15,6 +17,8 @@ import { MetaIntegrationMonitorController } from './meta-integration-monitor.con
 import { MetaIntegrationsController } from './meta-integrations.controller';
 import { MetaIntegrationsService } from './meta-integrations.service';
 import { MetaOAuthCallbackController } from './meta-oauth-callback.controller';
+import { TokenMonitoringProcessor } from './token-monitoring.processor';
+import { TokenMonitoringScheduler } from './token-monitoring.scheduler';
 
 @Module({
   imports: [
@@ -29,13 +33,20 @@ import { MetaOAuthCallbackController } from './meta-oauth-callback.controller';
       Business,
     ]),
     AuditModule,
+    BullModule.registerQueue({ name: QUEUE_NAMES.TOKEN_MONITORING }),
   ],
   controllers: [
     MetaIntegrationsController,
     MetaOAuthCallbackController,
     MetaIntegrationMonitorController,
   ],
-  providers: [MetaIntegrationsService, MetaGraphClient, IntegrationCryptoService],
+  providers: [
+    MetaIntegrationsService,
+    MetaGraphClient,
+    IntegrationCryptoService,
+    TokenMonitoringProcessor,
+    TokenMonitoringScheduler,
+  ],
   exports: [MetaIntegrationsService, MetaGraphClient, IntegrationCryptoService],
 })
 export class IntegrationsModule {}
