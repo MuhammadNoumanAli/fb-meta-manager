@@ -72,7 +72,7 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
    compose file already applies this setting.
 
 5. Apply database migrations (creates the identity, tenancy, invitation, Meta integration,
-   webhook/lead and campaign schema, and seeds roles/permissions):
+   webhook/lead and campaign schema, adds approvals and budgets, and seeds roles/permissions):
 
    ```bash
    npm run migration:run
@@ -147,6 +147,19 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 | `GET/POST /api/v1/businesses/:businessId/assets` | Media library and uploads |
 | `GET /api/v1/businesses/:businessId/assets/:assetId/content` | Authenticated media content |
 | `DELETE /api/v1/businesses/:businessId/assets/:assetId` | Delete unused media |
+| `GET/POST /api/v1/businesses/:businessId/approvals` | Approval list and creation |
+| `GET /api/v1/businesses/:businessId/approvals/policies` | Approval policy state |
+| `PATCH /api/v1/businesses/:businessId/approvals/policies/:targetType` | Enable or disable a policy |
+| `GET /api/v1/businesses/:businessId/approvals/:approvalId` | Approval detail with versions and decisions |
+| `POST /api/v1/businesses/:businessId/approvals/:approvalId/versions` | Submit a new payload version |
+| `POST /api/v1/businesses/:businessId/approvals/:approvalId/decision` | Approve or reject |
+| `POST /api/v1/businesses/:businessId/approvals/:approvalId/execute` | Retry an approved execution |
+| `POST /api/v1/businesses/:businessId/approvals/:approvalId/cancel` | Cancel a pending request |
+| `GET/POST /api/v1/businesses/:businessId/budgets` | Budget list and creation |
+| `GET/PATCH/DELETE /api/v1/businesses/:businessId/budgets/:budgetId` | Budget detail, edits and deletion |
+| `POST /api/v1/businesses/:businessId/budgets/:budgetId/snapshots` | Record a manual spend snapshot |
+| `GET /api/v1/businesses/:businessId/budgets/alerts` | Spend alert list |
+| `PATCH /api/v1/businesses/:businessId/budgets/alerts/:alertId/acknowledge` | Acknowledge a spend alert |
 | `GET /api/v1/audit-logs?businessId=` | Audit trail for a business |
 | `GET /api/docs` | Swagger UI |
 
@@ -255,6 +268,35 @@ creatives and a media library, then publishes them to the connected Meta ad acco
   campaign routes enforce business isolation. Live publishing requires a connected Meta ad
   account and the `ads_management` permission.
 
+## Approvals and budgets
+
+The **Approvals** and **Budgets** tabs on the business detail screen let owners constrain
+sensitive advertising actions and track spend against client and campaign limits.
+
+- Each business has three approval policies: campaign publishing, campaign status changes and
+  budget changes. They default to off. When a policy is enabled, callers without
+  `approval.decide` receive `202` with `approvalRequired: true` instead of a direct mutation;
+  owners and admins keep acting directly.
+- A request records the action payload, requester, optional assigned approver, reason and
+  expiry. Payloads are immutable versions with SHA-256 hashes: resubmitting a changed action
+  appends a version and invalidates the previous approval, and deciding an older version returns
+  `409`.
+- Approvers decide with an optional reason. Self-decisions are rejected and assigned approvers
+  must hold `approval.decide`. The decision updates state conditionally on `pending`, so two
+  approvers cannot both win.
+- An approval triggers its action immediately. Failures are stored on the request with
+  `executionStatus = failed` and the error, and `POST .../execute` retries without approving
+  again. Pending requests expire lazily after 7 days by default.
+- Budgets can be client level or campaign level, monthly or total, in one currency with a
+  percentage alert threshold. Every create, update and delete writes a ledger transaction linked
+  to the enabling approval.
+- Campaign sync records spend from Meta insights as a `meta_sync` snapshot. Manual snapshots
+  support finance reconciliation. Crossing the threshold opens one alert per budget, period and
+  threshold; alerts can be acknowledged and are updated as spend changes.
+- Budgets govern AdPilot reporting and alerts; they do not change the budget on Meta. Approval
+  and Meta states stay separate, so a campaign is never marked published because an approval
+  was approved.
+
 ## Scripts
 
 | Command | Description |
@@ -291,7 +333,10 @@ npm run migration:generate -w @adpilot/api -- src/database/migrations/DescribeCh
   normalisation, website keys and intake, failed-event retry and tenant isolation), and the
   campaign pipeline (structure CRUD, media validation, creative deletion guards, publish and
   external ID storage, structure locking, status push ordering, rejected child publishes,
-  review sync and tenant isolation). Meta calls are mocked, so no live credentials are
+  review sync and tenant isolation), and the approvals and budgets pipeline (policy gating,
+  payload versioning and stale-version rejection, self-decision and eligibility checks,
+  execution failure and retry, budget ledger, Meta spend snapshots, threshold alerts,
+  acknowledgement and tenant isolation). Meta calls are mocked, so no live credentials are
   required.
 - Frontend unit tests run with Vitest.
 - CI runs the e2e suite in a dedicated job with MySQL 8 and Redis service containers and
@@ -316,4 +361,7 @@ in [DEVELOPMENT_PROGRESS.md](DEVELOPMENT_PROGRESS.md).
   rotated or revoked at any time.
 - Uploaded ad media is type- and size-validated, stored outside the web root under a generated
   key and served only to authorized business members.
+- Approval payloads are immutable, hash-verified before execution and decided only by callers
+  holding `approval.decide`; self-decisions are rejected. Budget ledger and spend snapshots are
+  append-only.
 - Tenant isolation is enforced in the backend, never by frontend filtering alone.

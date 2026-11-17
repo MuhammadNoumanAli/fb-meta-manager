@@ -1,9 +1,144 @@
 # AdPilot Development Progress
 
-**Current phase:** Phase 5 — Campaign and Advertisement Management (complete)
+**Current phase:** Phase 6 — Approval and Budget Management (complete)
 **Last updated:** 2026-11-17
-**API version:** 0.6.0
+**API version:** 0.7.0
 **Blueprint:** [docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md](docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md)
+
+---
+
+## Phase 6 — Approval and Budget Management
+
+### Scope delivered
+
+- [x] Per-business approval policies for campaign publishing, campaign status and budget changes
+- [x] Approval requests with requester, optional assigned approver, target, reason and expiry
+- [x] Immutable payload versions with canonical SHA-256 hashes
+- [x] Approve and reject decisions pinned to a payload version; stale versions return `409`
+- [x] Self-decisions blocked; assigned approvers must hold `approval.decide`
+- [x] Execution of approved actions with captured failures and a retry endpoint
+- [x] Cancellation and lazy expiry of stale requests
+- [x] Publishing, status changes and budget mutations gated by enabled policies
+- [x] Business-level (client) and campaign-level budgets with monthly or total periods
+- [x] Budget transaction ledger with approval links for every mutation
+- [x] Spend snapshots from Meta insights sync and manual reconciliation
+- [x] Threshold alerts with open/acknowledged states and per-period dedupe
+- [x] Approvals and Budgets tabs on the business detail screen
+
+### Database migrations
+
+| Migration | Status |
+|---|---|
+| `1767000000000-Phase6ApprovalsAndBudgets` | Applied locally |
+
+Adds `approval_policies`, `approval_requests`, `approval_versions`, `approval_decisions`,
+`budgets`, `budget_transactions`, `spend_snapshots` and `budget_alerts`. Clearance is governed
+by `approval_policies` and `approval_requests`; a unique index allows one policy per business
+and target type, one campaign budget per campaign and one business-scope budget per business.
+Business deletion cascades approvals, versions, decisions, budgets, transactions, snapshots and
+alerts, while actor references are `SET NULL` where the history must survive.
+
+### API endpoints
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/businesses/:businessId/approvals` | `campaign.read` | List approvals with status, mine and target filters |
+| GET | `/api/v1/businesses/:businessId/approvals/policies` | `campaign.read` | Read the three policy switches |
+| PATCH | `/api/v1/businesses/:businessId/approvals/policies/:targetType` | `approval.decide` | Enable or disable an approval policy |
+| POST | `/api/v1/businesses/:businessId/approvals` | `approval.request` | Create an approval request |
+| GET | `/api/v1/businesses/:businessId/approvals/:approvalId` | `campaign.read` | Detail with payload versions and decisions |
+| POST | `/api/v1/businesses/:businessId/approvals/:approvalId/versions` | `approval.request` | Append a new payload version |
+| POST | `/api/v1/businesses/:businessId/approvals/:approvalId/decision` | `approval.decide` | Approve or reject a version |
+| POST | `/api/v1/businesses/:businessId/approvals/:approvalId/execute` | `approval.decide` | Retry a failed approved execution |
+| POST | `/api/v1/businesses/:businessId/approvals/:approvalId/cancel` | `approval.request` | Cancel a pending request |
+| GET | `/api/v1/businesses/:businessId/budgets` | `campaign.read` | List budgets with usage and alert counts |
+| POST | `/api/v1/businesses/:businessId/budgets` | `budget.manage` | Create a budget (direct or gated) |
+| GET | `/api/v1/businesses/:businessId/budgets/:budgetId` | `campaign.read` | Detail with transactions, snapshots and alerts |
+| PATCH | `/api/v1/businesses/:businessId/budgets/:budgetId` | `budget.manage` | Update a budget (gated on amount and state changes) |
+| DELETE | `/api/v1/businesses/:businessId/budgets/:budgetId` | `budget.manage` | Delete a budget (gated) |
+| POST | `/api/v1/businesses/:businessId/budgets/:budgetId/snapshots` | `budget.manage` | Record a manual spend snapshot |
+| GET | `/api/v1/businesses/:businessId/budgets/alerts` | `campaign.read` | List spend alerts by status |
+| PATCH | `/api/v1/businesses/:businessId/budgets/alerts/:alertId/acknowledge` | `budget.manage` | Acknowledge a spend alert |
+
+Approval target types are `campaign.publish`, `campaign.status` and `budget.change`. When a
+policy is enabled and the caller lacks `approval.decide`, the action returns `202` with
+`approvalRequired: true` and an approval record; nothing is mutated. Approvers continue to act
+directly. Requests expire after 7 days by default (configurable from 1 to 30), and decisions use
+a conditional update on `status = pending` so concurrent decisions cannot both succeed.
+
+Payload versions are immutable and content-addressed. Submitting the same action again for the
+same pending target and requester appends a version and resets approval and execution state, so
+an approved but altered payload always needs a fresh decision. Execution compares the approved
+version, its hash and the current version before the handler runs. A failed execution is stored
+with `executionStatus = failed` and can be retried through `POST .../execute`.
+
+Budgets are AdPilot-side governance controls, not Meta budget edits. A budget targets a business
+(client level) or a campaign, with a monthly or total period, amount, currency, threshold percent
+and optional notes. Spend is derived from the latest snapshot; creation, updates and deletion
+write ledger entries linked to the enabling approval. Meta spend is read from campaign insights
+(`date_preset=this_month`) during campaign sync and recorded as a `meta_sync` snapshot; manual
+snapshots support finance reconciliation. Crossing the threshold opens one alert per budget,
+period and threshold, and the alert is updated without reopening once spend is corrected.
+
+### Frontend screens
+
+| Screen | Route | Status |
+|---|---|---|
+| Business detail — Approvals tab (policies, filters, decisions) | `/businesses/:businessId?tab=approvals` | Complete |
+| Business detail — Budgets tab (usage, alerts, budget dialog) | `/businesses/:businessId?tab=budgets` | Complete |
+| Campaign publish and status flows show pending approval state | `/businesses/:businessId?tab=campaigns` | Complete |
+
+### Security properties
+
+- Approval, budget, snapshot and alert routes resolve permissions through the business guard;
+  cross-tenant identifiers return `404`.
+- Payload versions are immutable and hash-verified before execution, so an approved action cannot
+  be altered silently between decision and execution.
+- Only callers with `approval.decide` can decide, execute or change policies; self-decisions are
+  rejected and assigned approvers are validated against the permission.
+- Decisions are written with actor, reason and timestamp; ledger and snapshot records are
+  append-only for audit.
+- Spend sync decrypts the business Meta token inside the API process only; no token or ciphertext
+  is returned by any approval or budget endpoint.
+- Approval state and Meta state remain separate: a campaign is published only when execution
+  succeeds, and local status is never inferred from an approval.
+
+### Verification
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | Pass (API + web) |
+| Typecheck | `npm run typecheck` | Pass (API + web) |
+| API unit tests | `npm run test -w @adpilot/api` | Pass (5 suites, 24 tests) |
+| Web unit tests | `npm run test -w @adpilot/web` | Pass (3 files, 18 tests) |
+| API e2e (MySQL + Redis) | `npm run test:e2e -w @adpilot/api` | Pass (7 suites, 72 tests) |
+| Build | `npm run build` | Pass (API dist + web dist) |
+| Browser flow | enable policy → publish through approval → create budget → sync spend → alert | Pass |
+| Acceptance criteria | restricted changes require approval; changed payloads renew approval; spend alerts generated; internal and Meta statuses separate | Pass |
+
+Meta calls in tests use a mocked advertising provider and queue; no live Graph publishing is
+performed.
+
+### Known issues / limitations
+
+- Approval notifications are in-app only. Email and WhatsApp delivery arrives with Phase 8.
+- Spend synchronisation runs during campaign sync; a scheduled spend poller is part of the
+  reliability work in Phase 7.
+- Budgets are governance records. They do not change the budget on Meta; budget write-back
+  depends on Meta change APIs.
+- A budget has one currency. Multi-currency reporting is deferred to Phase 9.
+- Threshold alerts are per budget, period and threshold; escalation chains are not implemented.
+
+### Decisions requiring approval
+
+- Payloads are versioned and hash-pinned instead of mutable requests, so any edit invalidates a
+  prior approval by construction.
+- Execution runs synchronously when a request is approved, with an explicit retry endpoint for
+  failures, so approvals never hide a failed Meta call.
+- Budget mutations bypass approval for callers who already hold `approval.decide`; this keeps
+  owners and admins unblocked while still gating restricted roles.
+- Spend snapshots are append-only; corrections are new snapshots rather than edits so alert
+  history stays explainable.
 
 ---
 
@@ -640,7 +775,7 @@ Migration infrastructure is configured: `apps/api/src/database/data-source.ts` p
 | 3 — Meta authentication and asset integration | Complete |
 | 4 — Meta webhooks and lead integration | Complete |
 | 5 — Campaign and advertisement management | Complete |
-| 6 — Approval and budget management | Not started |
+| 6 — Approval and budget management | Complete |
 | 7 — Automation and reliability | Not started |
 | 8 — WhatsApp Business integration | Not started |
 | 9 — CRM, analytics and multi-currency | Not started |
