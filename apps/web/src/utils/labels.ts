@@ -136,3 +136,147 @@ export const webhookEventStatusColor = (status: string): string => {
       return 'default';
   }
 };
+
+const OBJECTIVE_LABELS: Record<string, string> = {
+  OUTCOME_AWARENESS: 'Awareness',
+  OUTCOME_TRAFFIC: 'Traffic',
+  OUTCOME_ENGAGEMENT: 'Engagement',
+  OUTCOME_LEADS: 'Leads',
+  OUTCOME_APP_PROMOTION: 'App promotion',
+  OUTCOME_SALES: 'Sales',
+};
+
+export const formatObjective = (objective: string): string =>
+  OBJECTIVE_LABELS[objective] ?? formatStatus(objective);
+
+const ADVERTISING_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  publishing: 'Publishing',
+  active: 'Active',
+  paused: 'Paused',
+  archived: 'Archived',
+  error: 'Error',
+};
+
+export const formatAdvertisingStatus = (status: string): string =>
+  ADVERTISING_STATUS_LABELS[status] ?? formatStatus(status);
+
+export const advertisingStatusColor = (status: string): string => {
+  switch (status) {
+    case 'active':
+      return 'success';
+    case 'publishing':
+      return 'info';
+    case 'paused':
+      return 'warning';
+    case 'error':
+      return 'error';
+    case 'archived':
+      return 'default';
+    default:
+      return 'primary';
+  }
+};
+
+const DELIVERY_STATUS_LABELS: Record<string, string> = {
+  unknown: 'Unknown',
+  active: 'Delivering',
+  paused: 'Paused',
+  archived: 'Archived',
+  deleted: 'Deleted',
+  pending_billing_info: 'Pending billing',
+  in_process: 'In process',
+  with_issues: 'With issues',
+};
+
+export const formatDeliveryStatus = (status: string): string =>
+  DELIVERY_STATUS_LABELS[status] ?? formatStatus(status);
+
+export const deliveryStatusColor = (status: string): string => {
+  switch (status) {
+    case 'active':
+      return 'success';
+    case 'in_process':
+      return 'info';
+    case 'paused':
+    case 'pending_billing_info':
+      return 'warning';
+    case 'with_issues':
+      return 'error';
+    default:
+      return 'default';
+  }
+};
+
+const REVIEW_STATUS_LABELS: Record<string, string> = {
+  unknown: 'Not reviewed',
+  in_review: 'In review',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  disabled: 'Disabled',
+};
+
+export const formatReviewStatus = (status: string): string =>
+  REVIEW_STATUS_LABELS[status] ?? formatStatus(status);
+
+export const reviewStatusColor = (status: string): string => {
+  switch (status) {
+    case 'approved':
+      return 'success';
+    case 'in_review':
+      return 'info';
+    case 'rejected':
+    case 'disabled':
+      return 'error';
+    default:
+      return 'default';
+  }
+};
+
+const CREATIVE_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  ready: 'Ready',
+  error: 'Error',
+  archived: 'Archived',
+};
+
+export const formatCreativeStatus = (status: string): string =>
+  CREATIVE_STATUS_LABELS[status] ?? formatStatus(status);
+
+export const creativeStatusColor = (status: string): string => {
+  switch (status) {
+    case 'ready':
+      return 'success';
+    case 'error':
+      return 'error';
+    default:
+      return 'default';
+  }
+};
+
+const OPTIMIZATION_GOAL_LABELS: Record<string, string> = {
+  NONE: 'No goal',
+  REACH: 'Reach',
+  IMPRESSIONS: 'Impressions',
+  LINK_CLICKS: 'Link clicks',
+  LANDING_PAGE_VIEWS: 'Landing page views',
+  POST_ENGAGEMENT: 'Post engagement',
+  CONVERSATIONS: 'Conversations',
+  LEAD_GENERATION: 'Lead generation',
+  VALUE: 'Value',
+  OFFSITE_CONVERSIONS: 'Offsite conversions',
+};
+
+export const formatOptimizationGoal = (goal: string): string =>
+  OPTIMIZATION_GOAL_LABELS[goal] ?? formatStatus(goal);
+
+const BILLING_EVENT_LABELS: Record<string, string> = {
+  IMPRESSIONS: 'Impressions',
+  LINK_CLICKS: 'Link clicks',
+  POST_ENGAGEMENT: 'Post engagement',
+  THRUPLAY: 'ThruPlay',
+};
+
+export const formatBillingEvent = (event: string): string =>
+  BILLING_EVENT_LABELS[event] ?? formatStatus(event);
+

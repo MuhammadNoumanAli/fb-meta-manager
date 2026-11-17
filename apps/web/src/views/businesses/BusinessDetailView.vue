@@ -91,6 +91,9 @@
       <v-card border flat class="mt-4">
         <v-tabs v-model="tab" color="primary">
           <v-tab value="members" prepend-icon="mdi-account-group-outline">Members</v-tab>
+          <v-tab v-if="canReadCampaigns" value="campaigns" prepend-icon="mdi-bullhorn-outline">
+            Campaigns
+          </v-tab>
           <v-tab v-if="canReadLeads" value="leads" prepend-icon="mdi-account-multiple-plus-outline">
             Leads
           </v-tab>
@@ -185,6 +188,15 @@
                 </tbody>
               </v-table>
             </v-card-text>
+          </v-window-item>
+
+          <v-window-item v-if="canReadCampaigns" value="campaigns">
+            <CampaignsTab
+              :business-id="businessId"
+              :can-create="canCreateCampaigns"
+              :can-update="canUpdateCampaigns"
+              :can-publish="canPublishCampaigns"
+            />
           </v-window-item>
 
           <v-window-item v-if="canReadLeads" value="leads">
@@ -342,6 +354,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import BusinessIntegrationsTab from '@/components/integrations/BusinessIntegrationsTab.vue';
+import CampaignsTab from '@/components/campaigns/CampaignsTab.vue';
 import LeadsTab from '@/components/leads/LeadsTab.vue';
 import { ApiError } from '@/services/api/client';
 import { workspaceApi } from '@/services/api/workspace.api';
@@ -397,6 +410,18 @@ const canManageMembers = computed(
   () => detail.value?.permissions.includes('business.manage_members') ?? false,
 );
 const canReadAudit = computed(() => detail.value?.permissions.includes('audit.read') ?? false);
+const canReadCampaigns = computed(
+  () => detail.value?.permissions.includes('campaign.read') ?? false,
+);
+const canCreateCampaigns = computed(
+  () => detail.value?.permissions.includes('campaign.create') ?? false,
+);
+const canUpdateCampaigns = computed(
+  () => detail.value?.permissions.includes('campaign.update') ?? false,
+);
+const canPublishCampaigns = computed(
+  () => detail.value?.permissions.includes('campaign.publish') ?? false,
+);
 const canReadLeads = computed(() => detail.value?.permissions.includes('lead.read') ?? false);
 const canManageLeads = computed(() => detail.value?.permissions.includes('lead.manage') ?? false);
 const canReadIntegrations = computed(
@@ -580,6 +605,12 @@ function applyIntegrationQuery(): void {
 
   if (route.query.tab === 'leads' && canReadLeads.value) {
     tab.value = 'leads';
+    void router.replace({ path: route.path, query: {} });
+    return;
+  }
+
+  if (route.query.tab === 'campaigns' && canReadCampaigns.value) {
+    tab.value = 'campaigns';
     void router.replace({ path: route.path, query: {} });
     return;
   }

@@ -86,7 +86,11 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
       headers.set('Accept', 'application/json');
     }
 
-    if (fetchInit.body !== undefined && !headers.has('Content-Type')) {
+    if (
+      fetchInit.body !== undefined &&
+      !(fetchInit.body instanceof FormData) &&
+      !headers.has('Content-Type')
+    ) {
       headers.set('Content-Type', 'application/json');
     }
 
