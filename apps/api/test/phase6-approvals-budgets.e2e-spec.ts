@@ -582,7 +582,18 @@ describe('Approvals and budgets (e2e)', () => {
       .set('Authorization', bearer(viewer))
       .expect(200);
 
-    expect(policies.body).toHaveLength(3);
+    expect(policies.body).toHaveLength(5);
+    expect(
+      policies.body.map((policy: { targetType: string }) => policy.targetType),
+    ).toEqual(
+      expect.arrayContaining([
+        'campaign.publish',
+        'campaign.status',
+        'budget.change',
+        'automation.execute',
+        'bulk.execute',
+      ]),
+    );
     expect(policies.body.every((policy: { isEnabled: boolean }) => !policy.isEnabled)).toBe(
       true,
     );
