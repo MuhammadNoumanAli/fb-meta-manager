@@ -3,12 +3,14 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Not, Repository } from 'typeorm';
 import { AdvertisingEntityType } from '../../common/enums/advertising-entity-type.enum';
 import { AdvertisingStatus } from '../../common/enums/advertising-status.enum';
+import { ApprovalTargetType } from '../../common/enums/approval-target-type.enum';
 import { MetaDeliveryStatus } from '../../common/enums/meta-delivery-status.enum';
 import { StatusChangeSource } from '../../common/enums/status-change-source.enum';
 import { SyncDirection } from '../../common/enums/sync-direction.enum';
@@ -21,11 +23,14 @@ import { Campaign } from '../../database/entities/campaign.entity';
 import { Creative } from '../../database/entities/creative.entity';
 import { MetaReviewStatusHistory } from '../../database/entities/meta-review-status-history.entity';
 import { PlatformSyncLog } from '../../database/entities/platform-sync-log.entity';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
+import { BudgetsService } from '../budgets/budgets.service';
 import { MetaIntegrationsService } from '../integrations/meta-integrations.service';
 import { AdvertisingAssetsService } from './advertising-assets.service';
 import type { CampaignDetailView } from './advertising.mappers';
 import { AdvertisingService } from './advertising.service';
+import type { CampaignApprovalPending } from './campaign-approval.types';
 import { CampaignQueueService, type CampaignPublishJob } from './campaign-queue.service';
 import {
   ADVERTISING_PROVIDER,
@@ -48,6 +53,8 @@ interface RefreshableEntity {
 
 @Injectable()
 export class CampaignPublishingService {
+  private readonly logger = new Logger(CampaignPublishingService.name);
+
   constructor(
     @InjectRepository(Campaign) private readonly campaigns: Repository<Campaign>,
     @InjectRepository(AdSet) private readonly adSets: Repository<AdSet>,
@@ -65,10 +72,52 @@ export class CampaignPublishingService {
     private readonly integrations: MetaIntegrationsService,
     private readonly marketingQueue: CampaignQueueService,
     private readonly audit: AuditService,
+    private readonly approvals: ApprovalsService,
+    private readonly budgets: BudgetsService,
     @Inject(ADVERTISING_PROVIDER) private readonly provider: AdvertisingProvider,
   ) {}
 
+  /**
+   * Public entry point. When the business enables the publish approval policy,
+   * a requester without decision rights gets a pending approval instead of a
+   * queued publish.
+   */
   async startPublish(
+    actorUserId: string,
+    businessId: string,
+    campaignId: string,
+    activate: boolean,
+    context: RequestContext,
+  ): Promise<CampaignDetailView | CampaignApprovalPending> {
+    const campaign = await this.advertising.requireCampaign(businessId, campaignId);
+    this.assertPublishable(campaign);
+
+    const gate = await this.approvals.getGate(
+      actorUserId,
+      businessId,
+      ApprovalTargetType.CAMPAIGN_PUBLISH,
+    );
+
+    if (!gate.required) {
+      return this.publishNow(actorUserId, businessId, campaignId, activate, context);
+    }
+
+    const approval = await this.approvals.createRequest({
+      actorUserId,
+      businessId,
+      targetType: ApprovalTargetType.CAMPAIGN_PUBLISH,
+      targetId: campaign.id,
+      targetLabel: campaign.name,
+      payload: { campaignId: campaign.id, activate },
+      note: activate ? 'Publish campaign as active' : 'Publish campaign as paused',
+      context,
+    });
+
+    return { approvalRequired: true, approval, campaign: null };
+  }
+
+  /** Executes an approved publish (also used when no policy is enabled). */
+  async publishNow(
     actorUserId: string,
     businessId: string,
     campaignId: string,
@@ -76,16 +125,7 @@ export class CampaignPublishingService {
     context: RequestContext,
   ): Promise<CampaignDetailView> {
     const campaign = await this.advertising.requireCampaign(businessId, campaignId);
-
-    if (!campaign.adAccountExternalId) {
-      throw new BadRequestException(
-        'Link this campaign to a connected Meta ad account before publishing',
-      );
-    }
-
-    if (campaign.status === AdvertisingStatus.ARCHIVED) {
-      throw new BadRequestException('Archived campaigns cannot be published');
-    }
+    this.assertPublishable(campaign);
 
     // Guard against accidental duplicate jobs while a publish is in flight.
     if (
@@ -142,6 +182,18 @@ export class CampaignPublishingService {
     }
 
     return this.advertising.getCampaign(businessId, campaignId);
+  }
+
+  private assertPublishable(campaign: Campaign): void {
+    if (!campaign.adAccountExternalId) {
+      throw new BadRequestException(
+        'Link this campaign to a connected Meta ad account before publishing',
+      );
+    }
+
+    if (campaign.status === AdvertisingStatus.ARCHIVED) {
+      throw new BadRequestException('Archived campaigns cannot be published');
+    }
   }
 
   /**
@@ -446,6 +498,7 @@ export class CampaignPublishingService {
 
     await this.applyLocalStatus(campaign, actorUserId);
     await this.campaigns.save(campaign);
+    await this.recordSpend(businessId, campaign, token);
     await this.syncLogs.insert({
       businessId,
       entityType: AdvertisingEntityType.CAMPAIGN,
@@ -614,6 +667,54 @@ export class CampaignPublishingService {
     }
   }
 
+  /**
+   * Best-effort spend capture during a campaign sync. A failed insights call or
+   * missing currency never fails the status synchronisation itself.
+   */
+  private async recordSpend(
+    businessId: string,
+    campaign: Campaign,
+    token: string,
+  ): Promise<void> {
+    if (!campaign.externalId) {
+      return;
+    }
+
+    try {
+      const spend = await this.provider.getSpend({
+        accessToken: token,
+        externalId: campaign.externalId,
+        datePreset: 'this_month',
+      });
+
+      if (spend.spend === null) {
+        return;
+      }
+
+      const currency = spend.currency ?? campaign.budgetCurrency;
+
+      if (!currency) {
+        return;
+      }
+
+      await this.budgets.recordCampaignSpend(
+        businessId,
+        campaign.id,
+        spend.spend,
+        currency,
+        { externalId: campaign.externalId, datePreset: 'this_month' },
+        toDate(spend.dateStart),
+        toDate(spend.dateStop),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Unable to record Meta spend for campaign ${campaign.id}: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+    }
+  }
+
   private async applyLocalStatus(
     campaign: Campaign,
     actorUserId: string,
@@ -696,6 +797,16 @@ export class CampaignPublishingService {
 
     return 'Unknown Meta API error';
   }
+}
+
+function toDate(value: string | null): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function statusFromDelivery(delivery: MetaDeliveryStatus): AdvertisingStatus | null {

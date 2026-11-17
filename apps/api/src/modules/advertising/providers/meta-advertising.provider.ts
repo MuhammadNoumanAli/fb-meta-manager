@@ -9,7 +9,9 @@ import type {
   CreateCampaignInput,
   CreateCreativeInput,
   EntityStatusInput,
+  EntitySpendInput,
   ProviderEntityResult,
+  ProviderSpendResult,
   ProviderStatusResult,
   UpdateAdvertisingEntityInput,
   UploadImageInput,
@@ -157,6 +159,21 @@ export class MetaAdvertisingProvider implements AdvertisingProvider {
     );
 
     return mapMetaStatus(snapshot);
+  }
+
+  async getSpend(input: EntitySpendInput): Promise<ProviderSpendResult> {
+    const result = await this.graphClient.getCampaignSpend(
+      input.accessToken,
+      input.externalId,
+      input.datePreset,
+    );
+
+    return {
+      spend: result.spend,
+      currency: result.currency,
+      dateStart: result.dateStart,
+      dateStop: result.dateStop,
+    };
   }
 
   async uploadImage(input: UploadImageInput): Promise<UploadImageResult> {

@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AdvertisingEntityType } from '../../common/enums/advertising-entity-type.enum';
 import { AdvertisingStatus } from '../../common/enums/advertising-status.enum';
+import { ApprovalTargetType } from '../../common/enums/approval-target-type.enum';
 import { CreativeStatus } from '../../common/enums/creative-status.enum';
 import { StatusChangeSource } from '../../common/enums/status-change-source.enum';
 import { SyncDirection } from '../../common/enums/sync-direction.enum';
@@ -25,6 +26,7 @@ import { MetaAdAccount } from '../../database/entities/meta-ad-account.entity';
 import { MetaReviewStatusHistory } from '../../database/entities/meta-review-status-history.entity';
 import { MetaPage } from '../../database/entities/meta-page.entity';
 import { PlatformSyncLog } from '../../database/entities/platform-sync-log.entity';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { MetaGraphError } from '../integrations/meta-graph.client';
 import { MetaIntegrationsService } from '../integrations/meta-integrations.service';
@@ -55,6 +57,7 @@ import {
   ADVERTISING_PROVIDER,
   type AdvertisingProvider,
 } from './providers/advertising-provider.interface';
+import type { CampaignApprovalPending } from './campaign-approval.types';
 
 export interface PagedResult<T> {
   items: T[];
@@ -91,6 +94,7 @@ export class AdvertisingService {
     @InjectRepository(Business) private readonly businesses: Repository<Business>,
     private readonly integrations: MetaIntegrationsService,
     private readonly audit: AuditService,
+    private readonly approvals: ApprovalsService,
     @Inject(ADVERTISING_PROVIDER) private readonly provider: AdvertisingProvider,
   ) {}
 
@@ -307,16 +311,58 @@ export class AdvertisingService {
     });
   }
 
+  /**
+   * Public status change. Restricted changes become a pending approval when
+   * the business enables the status policy and the actor cannot decide.
+   */
   async updateCampaignStatus(
     actorUserId: string,
     businessId: string,
     campaignId: string,
     dto: UpdateAdvertisingStatusDto,
     context: RequestContext,
-  ): Promise<CampaignView> {
+  ): Promise<CampaignView | CampaignApprovalPending> {
     const campaign = await this.requireCampaign(businessId, campaignId);
 
     if (campaign.status === dto.status) {
+      return toCampaignView(campaign);
+    }
+
+    const gate = await this.approvals.getGate(
+      actorUserId,
+      businessId,
+      ApprovalTargetType.CAMPAIGN_STATUS,
+    );
+
+    if (!gate.required) {
+      return this.applyStatusChange(actorUserId, businessId, campaignId, dto.status, context);
+    }
+
+    const approval = await this.approvals.createRequest({
+      actorUserId,
+      businessId,
+      targetType: ApprovalTargetType.CAMPAIGN_STATUS,
+      targetId: campaign.id,
+      targetLabel: campaign.name,
+      payload: { campaignId: campaign.id, status: dto.status },
+      note: `Change campaign status from ${campaign.status} to ${dto.status}`,
+      context,
+    });
+
+    return { approvalRequired: true, approval, campaign: null };
+  }
+
+  /** Applies a status change (also used when an approved request executes). */
+  async applyStatusChange(
+    actorUserId: string,
+    businessId: string,
+    campaignId: string,
+    status: AdvertisingStatus,
+    context: RequestContext,
+  ): Promise<CampaignView> {
+    const campaign = await this.requireCampaign(businessId, campaignId);
+
+    if (campaign.status === status) {
       return toCampaignView(campaign);
     }
 
@@ -325,24 +371,24 @@ export class AdvertisingService {
         businessId,
         campaign.adAccountExternalId,
         campaign.externalId,
-        dto.status,
+        status,
         AdvertisingEntityType.CAMPAIGN,
         campaign.id,
       );
     }
 
     const from = campaign.status;
-    campaign.status = dto.status;
+    campaign.status = status;
     campaign.lastError = null;
     await this.campaigns.save(campaign);
-    await this.recordStatus(campaign, from, dto.status, actorUserId, null);
+    await this.recordStatus(campaign, from, status, actorUserId, null);
     await this.audit.record({
       action: 'campaign.status_changed',
       actorUserId,
       businessId,
       entityType: 'campaign',
       entityId: campaign.id,
-      metadata: { from, to: dto.status },
+      metadata: { from, to: status },
       context,
     });
 

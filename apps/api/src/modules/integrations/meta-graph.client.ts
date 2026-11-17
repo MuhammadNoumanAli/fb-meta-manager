@@ -75,6 +75,13 @@ export interface MetaAdImageResult {
   url: string | null;
 }
 
+export interface MetaCampaignSpendResult {
+  spend: number | null;
+  currency: string | null;
+  dateStart: string | null;
+  dateStop: string | null;
+}
+
 export class MetaGraphError extends Error {
   constructor(
     message: string,
@@ -426,6 +433,35 @@ export class MetaGraphClient {
         code: issue.error_code ?? null,
         summary: issue.error_summary ?? issue.error_message ?? null,
       })),
+    };
+  }
+
+  /** Reads the campaign spend for a date preset. Used for budget monitoring. */
+  async getCampaignSpend(
+    accessToken: string,
+    externalId: string,
+    datePreset = 'this_month',
+  ): Promise<MetaCampaignSpendResult> {
+    const response = await this.request<{
+      data?: Array<{
+        spend?: string;
+        account_currency?: string;
+        date_start?: string;
+        date_stop?: string;
+      }>;
+    }>(`${encodeURIComponent(externalId)}/insights`, {
+      fields: 'spend,account_currency',
+      date_preset: datePreset,
+      access_token: accessToken,
+    });
+    const row = response.data?.[0] ?? null;
+    const spend = row?.spend === undefined ? null : Number(row.spend);
+
+    return {
+      spend: spend !== null && Number.isFinite(spend) ? spend : null,
+      currency: row?.account_currency ?? null,
+      dateStart: row?.date_start ?? null,
+      dateStop: row?.date_stop ?? null,
     };
   }
 

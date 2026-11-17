@@ -15,7 +15,9 @@ import { validateEnvironment } from './config/env.validation';
 import { AccessModule } from './modules/access/access.module';
 import { AdvertisingModule } from './modules/advertising/advertising.module';
 import { AgenciesModule } from './modules/agencies/agencies.module';
+import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { BudgetsModule } from './modules/budgets/budgets.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BusinessesModule } from './modules/businesses/businesses.module';
 import { HealthModule } from './modules/health/health.module';
@@ -134,6 +136,8 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     IntegrationsModule,
     LeadsModule,
     AdvertisingModule,
+    ApprovalsModule,
+    BudgetsModule,
     WebhooksModule,
   ],
   controllers: [AppController],

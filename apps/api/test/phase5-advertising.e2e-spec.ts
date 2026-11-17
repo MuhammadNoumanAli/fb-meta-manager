@@ -181,6 +181,12 @@ describe('Campaign and advertisement management (e2e)', () => {
         issues: fixture.issues ?? [],
       };
     },
+    getCampaignSpend: async (): Promise<{
+      spend: number | null;
+      currency: string | null;
+      dateStart: string | null;
+      dateStop: string | null;
+    }> => ({ spend: null, currency: null, dateStart: null, dateStop: null }),
     uploadAdImage: async (): Promise<{ hash: string; url: string | null }> => {
       graphState.imageUploads += 1;
 

@@ -79,6 +79,19 @@ export interface UploadImageResult {
   imageHash: string;
 }
 
+export interface EntitySpendInput {
+  accessToken: string;
+  externalId: string;
+  datePreset?: string;
+}
+
+export interface ProviderSpendResult {
+  spend: number | null;
+  currency: string | null;
+  dateStart: string | null;
+  dateStop: string | null;
+}
+
 /**
  * Advertising provider boundary. Meta-specific Graph calls stay inside the
  * implementation so campaign services remain provider-agnostic.
@@ -94,5 +107,6 @@ export interface AdvertisingProvider {
   updateAd(input: UpdateAdvertisingEntityInput): Promise<void>;
   createCreative(input: CreateCreativeInput): Promise<ProviderEntityResult>;
   getEntityStatus(input: EntityStatusInput): Promise<ProviderStatusResult>;
+  getSpend(input: EntitySpendInput): Promise<ProviderSpendResult>;
   uploadImage(input: UploadImageInput): Promise<UploadImageResult>;
 }
