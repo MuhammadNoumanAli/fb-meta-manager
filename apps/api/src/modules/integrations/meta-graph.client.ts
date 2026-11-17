@@ -59,6 +59,22 @@ export interface MetaLeadDetails {
   fields: MetaLeadFieldDatum[];
 }
 
+export interface MetaEntityResult {
+  id: string;
+}
+
+export interface MetaAdvertisingStatusResult {
+  id: string;
+  status: string | null;
+  effectiveStatus: string | null;
+  issues: Array<{ code: number | null; summary: string | null }>;
+}
+
+export interface MetaAdImageResult {
+  hash: string;
+  url: string | null;
+}
+
 export class MetaGraphError extends Error {
   constructor(
     message: string,
@@ -329,6 +345,127 @@ export class MetaGraphClient {
     }
   }
 
+  async createCampaign(
+    accessToken: string,
+    adAccountExternalId: string,
+    params: Record<string, string | number>,
+  ): Promise<MetaEntityResult> {
+    return this.postForm<MetaEntityResult>(
+      `${accountPath(adAccountExternalId)}/campaigns`,
+      { ...params, access_token: accessToken },
+    );
+  }
+
+  async createAdSet(
+    accessToken: string,
+    adAccountExternalId: string,
+    params: Record<string, string | number>,
+  ): Promise<MetaEntityResult> {
+    return this.postForm<MetaEntityResult>(
+      `${accountPath(adAccountExternalId)}/adsets`,
+      { ...params, access_token: accessToken },
+    );
+  }
+
+  async createAd(
+    accessToken: string,
+    adAccountExternalId: string,
+    params: Record<string, string | number>,
+  ): Promise<MetaEntityResult> {
+    return this.postForm<MetaEntityResult>(
+      `${accountPath(adAccountExternalId)}/ads`,
+      { ...params, access_token: accessToken },
+    );
+  }
+
+  async createCreative(
+    accessToken: string,
+    adAccountExternalId: string,
+    params: Record<string, string | number>,
+  ): Promise<MetaEntityResult> {
+    return this.postForm<MetaEntityResult>(
+      `${accountPath(adAccountExternalId)}/adcreatives`,
+      { ...params, access_token: accessToken },
+    );
+  }
+
+  async updateAdvertisingEntity(
+    accessToken: string,
+    externalId: string,
+    params: Record<string, string | number>,
+  ): Promise<void> {
+    await this.postForm(encodeURIComponent(externalId), {
+      ...params,
+      access_token: accessToken,
+    });
+  }
+
+  async getAdvertisingStatus(
+    accessToken: string,
+    externalId: string,
+  ): Promise<MetaAdvertisingStatusResult> {
+    const response = await this.request<{
+      id?: string;
+      status?: string;
+      effective_status?: string;
+      issues_info?: Array<{
+        error_code?: number;
+        error_summary?: string;
+        error_message?: string;
+      }>;
+    }>(encodeURIComponent(externalId), {
+      fields: 'id,status,effective_status,issues_info',
+      access_token: accessToken,
+    });
+
+    return {
+      id: response.id ?? externalId,
+      status: response.status ?? null,
+      effectiveStatus: response.effective_status ?? null,
+      issues: (response.issues_info ?? []).map((issue) => ({
+        code: issue.error_code ?? null,
+        summary: issue.error_summary ?? issue.error_message ?? null,
+      })),
+    };
+  }
+
+  /** Uploads an image to the ad account library and returns Meta's image hash. */
+  async uploadAdImage(
+    accessToken: string,
+    adAccountExternalId: string,
+    image: { buffer: Buffer; filename: string; mimeType: string },
+  ): Promise<MetaAdImageResult> {
+    const form = new FormData();
+    form.append(
+      'file',
+      new Blob([image.buffer as unknown as BlobPart], { type: image.mimeType }),
+      image.filename,
+    );
+    form.append('access_token', accessToken);
+
+    const response = await fetch(
+      `${this.baseUrl}/${accountPath(adAccountExternalId)}/adimages`,
+      { method: 'POST', body: form },
+    );
+
+    if (!response.ok) {
+      throw await this.toGraphError(response);
+    }
+
+    const body = (await response.json()) as {
+      images?: Record<string, { hash?: string; url?: string }>;
+    };
+    const images = Object.values(body.images ?? {});
+    const uploaded = images[0];
+
+    if (!uploaded?.hash) {
+      throw new MetaGraphError('Meta did not return an image hash');
+    }
+
+    return { hash: uploaded.hash, url: uploaded.url ?? null };
+  }
+
+
   private getRedirectUri(): string {
     return this.requireSetting('meta.redirectUri');
   }
@@ -384,6 +521,23 @@ export class MetaGraphClient {
     return this.fetchJson<T>(this.buildUrl(path, params), method);
   }
 
+  private async postForm<T>(
+    path: string,
+    params: Record<string, string | number>,
+  ): Promise<T> {
+    const body = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(params)) {
+      body.set(key, String(value));
+    }
+
+    return this.fetchJson<T>(
+      `${this.baseUrl}/${path.replace(/^\//, '')}`,
+      'POST',
+      body.toString(),
+    );
+  }
+
   private buildUrl(
     path: string,
     params: Record<string, string | number>,
@@ -399,26 +553,42 @@ export class MetaGraphClient {
 
   private async fetchJson<T>(
     url: string,
-    method: 'GET' | 'DELETE',
+    method: 'GET' | 'DELETE' | 'POST',
+    body?: string,
   ): Promise<T> {
-    const response = await fetch(url, { method });
+    const response = await fetch(url, {
+      method,
+      headers: body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : undefined,
+      body,
+    });
 
     if (!response.ok) {
-      let body: GraphErrorBody = {};
-
-      try {
-        body = (await response.json()) as GraphErrorBody;
-      } catch {
-        // The Graph API occasionally returns HTML error pages.
-      }
-
-      throw new MetaGraphError(
-        body.error?.message ?? `Meta Graph API request failed (${response.status})`,
-        response.status,
-        body.error?.code ?? null,
-      );
+      throw await this.toGraphError(response);
     }
 
-    return (await response.json()) as T;
+    const text = await response.text();
+
+    return (text ? JSON.parse(text) : {}) as T;
   }
+
+  private async toGraphError(response: Response): Promise<MetaGraphError> {
+    let body: GraphErrorBody = {};
+
+    try {
+      body = (await response.json()) as GraphErrorBody;
+    } catch {
+      // The Graph API occasionally returns HTML error pages.
+    }
+
+    return new MetaGraphError(
+      body.error?.message ?? `Meta Graph API request failed (${response.status})`,
+      response.status,
+      body.error?.code ?? null,
+    );
+  }
+}
+
+/** Meta account IDs are accepted both with and without the `act_` prefix. */
+function accountPath(adAccountExternalId: string): string {
+  return `act_${adAccountExternalId.replace(/^act_/, '')}`;
 }

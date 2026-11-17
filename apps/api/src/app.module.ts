@@ -13,6 +13,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
 import configuration from './config/configuration';
 import { validateEnvironment } from './config/env.validation';
 import { AccessModule } from './modules/access/access.module';
+import { AdvertisingModule } from './modules/advertising/advertising.module';
 import { AgenciesModule } from './modules/agencies/agencies.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -132,6 +133,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     InvitationsModule,
     IntegrationsModule,
     LeadsModule,
+    AdvertisingModule,
     WebhooksModule,
   ],
   controllers: [AppController],

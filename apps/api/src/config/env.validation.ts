@@ -46,6 +46,9 @@ export const envValidationSchema = Joi.object({
     then: Joi.string().min(32).required(),
   }),
 
+  UPLOAD_DIRECTORY: Joi.string().allow('').optional(),
+  UPLOAD_MAX_BYTES: Joi.number().integer().min(1).optional(),
+
   WHATSAPP_PROVIDER: Joi.string().allow('').optional(),
   WHATSAPP_ACCESS_TOKEN: Joi.string().allow('').optional(),
   WHATSAPP_PHONE_NUMBER_ID: Joi.string().allow('').optional(),

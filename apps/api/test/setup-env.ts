@@ -8,3 +8,4 @@ process.env.META_REDIRECT_URI =
   process.env.META_REDIRECT_URI || 'http://localhost:3000/api/v1/integrations/meta/oauth/callback';
 process.env.META_WEBHOOK_VERIFY_TOKEN =
   process.env.META_WEBHOOK_VERIFY_TOKEN || 'phase4-test-verify-token';
+process.env.UPLOAD_DIRECTORY = process.env.UPLOAD_DIRECTORY || 'var/test-uploads';

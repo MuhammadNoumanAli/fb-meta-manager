@@ -370,6 +370,30 @@ export class MetaIntegrationsService {
     return this.getOverview(businessId);
   }
 
+  /**
+   * Returns the decrypted token for server-side advertising calls. Callers must
+   * only use it for outbound Graph requests; it is never exposed to clients.
+   */
+  async getAccessTokenForBusiness(businessId: string): Promise<string> {
+    const authorization = await this.findAuthorization(businessId);
+
+    if (!authorization || authorization.status !== IntegrationStatus.ACTIVE) {
+      throw new BadRequestException(
+        'Connect Meta to this business before publishing advertisements',
+      );
+    }
+
+    const token = this.decryptToken(authorization, false);
+
+    if (!token) {
+      throw new BadRequestException(
+        'Reconnect Meta before publishing advertisements',
+      );
+    }
+
+    return token;
+  }
+
   async discover(
     actorUserId: string,
     businessId: string,

@@ -35,6 +35,10 @@ export interface AppConfiguration {
   integrations: {
     encryptionKey: string;
   };
+  uploads: {
+    directory: string;
+    maxBytes: number;
+  };
   whatsapp: {
     provider: string;
     accessToken: string;
@@ -93,6 +97,10 @@ export default (): AppConfiguration => ({
   },
   integrations: {
     encryptionKey: process.env.INTEGRATION_ENCRYPTION_KEY ?? '',
+  },
+  uploads: {
+    directory: process.env.UPLOAD_DIRECTORY ?? 'var/uploads',
+    maxBytes: asNumber(process.env.UPLOAD_MAX_BYTES, 8 * 1024 * 1024),
   },
   whatsapp: {
     provider: process.env.WHATSAPP_PROVIDER ?? '',
