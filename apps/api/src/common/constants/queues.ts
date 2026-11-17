@@ -1,7 +1,7 @@
 /**
  * Canonical BullMQ queue names from the AdPilot architecture blueprint.
- * Phase 0 registers only the notification queue; later phases add producers
- * and workers for each queue as their features are implemented.
+ * Phases register producers and workers as their features ship; Phase 7 adds
+ * automation execution, dispatch, bulk operations, token monitoring and dead letters.
  */
 export const QUEUE_NAMES = {
   CAMPAIGN_OPERATIONS: 'campaign-operations',
@@ -15,6 +15,7 @@ export const QUEUE_NAMES = {
   AUTOMATION_EXECUTION: 'automation-execution',
   NOTIFICATIONS: 'notifications',
   BULK_OPERATIONS: 'bulk-operations',
+  DEAD_LETTER: 'dead-letter',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
