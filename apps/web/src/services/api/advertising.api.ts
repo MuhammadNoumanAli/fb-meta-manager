@@ -1,3 +1,4 @@
+import type { CampaignApprovalPending } from '@/types/approvals';
 import type {
   AdSet,
   AdSetDetail,
@@ -68,16 +69,22 @@ export const advertisingApi = {
     campaignId: string,
     status: 'active' | 'paused' | 'archived',
   ) =>
-    apiRequest<Campaign>(`/businesses/${businessId}/campaigns/${campaignId}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    }),
+    apiRequest<Campaign | CampaignApprovalPending>(
+      `/businesses/${businessId}/campaigns/${campaignId}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      },
+    ),
 
   publishCampaign: (businessId: string, campaignId: string, activate: boolean) =>
-    apiRequest<CampaignDetail>(`/businesses/${businessId}/campaigns/${campaignId}/publish`, {
-      method: 'POST',
-      body: JSON.stringify({ activate }),
-    }),
+    apiRequest<CampaignDetail | CampaignApprovalPending>(
+      `/businesses/${businessId}/campaigns/${campaignId}/publish`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ activate }),
+      },
+    ),
 
   syncCampaign: (businessId: string, campaignId: string) =>
     apiRequest<CampaignDetail>(`/businesses/${businessId}/campaigns/${campaignId}/sync`, {

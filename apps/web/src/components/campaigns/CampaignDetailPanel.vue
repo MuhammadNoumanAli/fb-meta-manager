@@ -97,6 +97,28 @@
         {{ actionError }}
       </v-alert>
 
+      <v-alert
+        v-if="pendingApprovals.length > 0"
+        type="info"
+        variant="tonal"
+        density="compact"
+        class="mb-4"
+      >
+        <div class="font-weight-medium mb-1">Awaiting approval</div>
+        <div class="text-body-2">
+          {{ pendingApprovals.length }}
+          {{ pendingApprovals.length === 1 ? 'request is' : 'requests are' }} pending for this
+          campaign. An approver can approve or reject them in the Approvals tab.
+        </div>
+        <ul class="pl-4 mt-1 text-body-2">
+          <li v-for="request in pendingApprovals" :key="request.id">
+            {{ formatApprovalTarget(request.targetType) }} ·
+            {{ request.requestedBy?.name ?? 'Unknown requester' }} ·
+            v{{ request.currentVersion }}
+          </li>
+        </ul>
+      </v-alert>
+
       <v-alert v-if="campaign.lastError" type="error" variant="tonal" class="mb-4">
         <div class="font-weight-medium mb-1">Last Meta error</div>
         <div class="text-body-2">{{ campaign.lastError }}</div>
@@ -538,7 +560,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AdFormDialog from '@/components/campaigns/AdFormDialog.vue';
 import AdSetFormDialog from '@/components/campaigns/AdSetFormDialog.vue';
 import { advertisingApi } from '@/services/api/advertising.api';
+import { approvalsApi } from '@/services/api/approvals.api';
 import { ApiError } from '@/services/api/client';
+import type { ApprovalRequest, ApprovalTargetType } from '@/types/approvals';
 import type {
   AdSet,
   Advertisement,
@@ -576,6 +600,7 @@ const emit = defineEmits<{
 const campaign = ref<CampaignDetail | null>(null);
 const creatives = ref<Creative[]>([]);
 const previews = ref<Record<string, string>>({});
+const pendingApprovals = ref<ApprovalRequest[]>([]);
 const loading = ref(true);
 const loadError = ref<string | null>(null);
 const actionError = ref<string | null>(null);
@@ -720,12 +745,38 @@ async function loadCampaign(): Promise<void> {
   actionError.value = null;
 }
 
+async function loadPendingApprovals(): Promise<void> {
+  try {
+    const result = await approvalsApi.list(props.businessId, {
+      status: 'pending',
+      targetId: props.campaignId,
+      pageSize: 20,
+    });
+    pendingApprovals.value = result.items;
+  } catch {
+    pendingApprovals.value = [];
+  }
+}
+
+function formatApprovalTarget(targetType: ApprovalTargetType): string {
+  switch (targetType) {
+    case 'campaign.publish':
+      return 'Campaign publish';
+    case 'campaign.status':
+      return 'Campaign status';
+    case 'budget.change':
+      return 'Budget change';
+    default:
+      return targetType;
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true;
   loadError.value = null;
 
   try {
-    await Promise.all([loadCampaign(), loadCreatives()]);
+    await Promise.all([loadCampaign(), loadCreatives(), loadPendingApprovals()]);
   } catch (caught) {
     loadError.value = describeError(caught, 'Unable to load the campaign.');
   } finally {
@@ -739,7 +790,7 @@ async function load(): Promise<void> {
 
 async function refresh(): Promise<void> {
   try {
-    await loadCampaign();
+    await Promise.all([loadCampaign(), loadPendingApprovals()]);
     emit('changed');
   } catch (caught) {
     actionError.value = describeError(caught, 'Unable to refresh the campaign.');
@@ -781,12 +832,22 @@ async function publish(): Promise<void> {
   actionError.value = null;
 
   try {
-    campaign.value = await advertisingApi.publishCampaign(
+    const result = await advertisingApi.publishCampaign(
       props.businessId,
       props.campaignId,
       activateOnPublish.value,
     );
+
     publishDialog.value = false;
+
+    if ('approvalRequired' in result) {
+      emit('changed');
+      await loadPendingApprovals();
+      notify('Publish request submitted for approval.', 'info');
+      return;
+    }
+
+    campaign.value = result;
     emit('changed');
     notify('Publishing started.');
     void pollPublishing();
@@ -816,7 +877,18 @@ async function changeStatus(status: ActiveAdvertisingStatus): Promise<void> {
   actionError.value = null;
 
   try {
-    await advertisingApi.updateCampaignStatus(props.businessId, props.campaignId, status);
+    const result = await advertisingApi.updateCampaignStatus(
+      props.businessId,
+      props.campaignId,
+      status,
+    );
+
+    if ('approvalRequired' in result) {
+      await refresh();
+      notify('Status change submitted for approval.', 'info');
+      return;
+    }
+
     await refresh();
     notify(`Campaign marked ${status}.`);
   } catch (caught) {

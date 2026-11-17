@@ -98,6 +98,16 @@
             Leads
           </v-tab>
           <v-tab
+            v-if="canReadCampaigns"
+            value="approvals"
+            prepend-icon="mdi-shield-check-outline"
+          >
+            Approvals
+          </v-tab>
+          <v-tab v-if="canReadCampaigns" value="budgets" prepend-icon="mdi-cash-multiple">
+            Budgets
+          </v-tab>
+          <v-tab
             v-if="canReadIntegrations"
             value="integrations"
             prepend-icon="mdi-connection"
@@ -201,6 +211,22 @@
 
           <v-window-item v-if="canReadLeads" value="leads">
             <LeadsTab :business-id="businessId" :can-manage="canManageLeads" />
+          </v-window-item>
+
+          <v-window-item v-if="canReadCampaigns" value="approvals">
+            <ApprovalsTab
+              :business-id="businessId"
+              :can-request="canRequestApprovals"
+              :can-decide="canDecideApprovals"
+            />
+          </v-window-item>
+
+          <v-window-item v-if="canReadCampaigns" value="budgets">
+            <BudgetsTab
+              :business-id="businessId"
+              :can-manage="canManageBudgets"
+              :default-currency="detail.business.currency"
+            />
           </v-window-item>
 
           <v-window-item v-if="canReadIntegrations" value="integrations">
@@ -353,6 +379,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import ApprovalsTab from '@/components/approvals/ApprovalsTab.vue';
+import BudgetsTab from '@/components/budgets/BudgetsTab.vue';
 import BusinessIntegrationsTab from '@/components/integrations/BusinessIntegrationsTab.vue';
 import CampaignsTab from '@/components/campaigns/CampaignsTab.vue';
 import LeadsTab from '@/components/leads/LeadsTab.vue';
@@ -424,6 +452,15 @@ const canPublishCampaigns = computed(
 );
 const canReadLeads = computed(() => detail.value?.permissions.includes('lead.read') ?? false);
 const canManageLeads = computed(() => detail.value?.permissions.includes('lead.manage') ?? false);
+const canRequestApprovals = computed(
+  () => detail.value?.permissions.includes('approval.request') ?? false,
+);
+const canDecideApprovals = computed(
+  () => detail.value?.permissions.includes('approval.decide') ?? false,
+);
+const canManageBudgets = computed(
+  () => detail.value?.permissions.includes('budget.manage') ?? false,
+);
 const canReadIntegrations = computed(
   () => detail.value?.permissions.includes('integration.read') ?? false,
 );
@@ -611,6 +648,18 @@ function applyIntegrationQuery(): void {
 
   if (route.query.tab === 'campaigns' && canReadCampaigns.value) {
     tab.value = 'campaigns';
+    void router.replace({ path: route.path, query: {} });
+    return;
+  }
+
+  if (route.query.tab === 'approvals' && canReadCampaigns.value) {
+    tab.value = 'approvals';
+    void router.replace({ path: route.path, query: {} });
+    return;
+  }
+
+  if (route.query.tab === 'budgets' && canReadCampaigns.value) {
+    tab.value = 'budgets';
     void router.replace({ path: route.path, query: {} });
     return;
   }
