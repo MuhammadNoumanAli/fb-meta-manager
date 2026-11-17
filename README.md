@@ -160,6 +160,17 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 | `POST /api/v1/businesses/:businessId/budgets/:budgetId/snapshots` | Record a manual spend snapshot |
 | `GET /api/v1/businesses/:businessId/budgets/alerts` | Spend alert list |
 | `PATCH /api/v1/businesses/:businessId/budgets/alerts/:alertId/acknowledge` | Acknowledge a spend alert |
+| `GET/POST /api/v1/businesses/:businessId/automation/rules` | Automation rule list and creation |
+| `GET/PATCH/DELETE /api/v1/businesses/:businessId/automation/rules/:ruleId` | Rule detail, edits and deletion |
+| `POST /api/v1/businesses/:businessId/automation/rules/:ruleId/run` | Queue a manual rule run |
+| `GET/POST /api/v1/businesses/:businessId/automation/scheduled-actions` | Scheduled action list and creation |
+| `POST /api/v1/businesses/:businessId/automation/scheduled-actions/:actionId/cancel` | Cancel a scheduled action |
+| `GET /api/v1/businesses/:businessId/automation/executions[/:executionId]` | Execution history and detail |
+| `POST /api/v1/businesses/:businessId/automation/executions/:executionId/retry` | Re-queue a failed execution |
+| `POST /api/v1/businesses/:businessId/automation/dispatch` | Dispatch due schedules and event rules |
+| `GET/POST /api/v1/businesses/:businessId/bulk-operations` | Bulk operation list and creation |
+| `GET /api/v1/businesses/:businessId/bulk-operations/:operationId` | Bulk detail with per-item results |
+| `POST /api/v1/businesses/:businessId/bulk-operations/:operationId/retry` | Retry only failed items |
 | `GET /api/v1/audit-logs?businessId=` | Audit trail for a business |
 | `GET /api/docs` | Swagger UI |
 
@@ -213,8 +224,9 @@ accounts. Owners and admins can connect, reconnect, refresh, validate or disconn
 - Validation detects expired or revoked credentials, clears the credential, flags
   `requiresReauthorization` and records an audit entry. Missing scopes produce `attention`
   with the exact missing permissions.
-- Health values are `not_connected`, `healthy`, `attention`, `expired` and `revoked`. The
-  platform-only `monitor/sweep` endpoint is the foundation for scheduled token monitoring.
+- Health values are `not_connected`, `healthy`, `attention`, `expired` and `revoked`. A
+  scheduled worker sweeps connected credentials every six hours, and the platform-only
+  `monitor/sweep` endpoint remains available for operators.
 
 Configure `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`,
 `META_WEBHOOK_VERIFY_TOKEN` and `INTEGRATION_ENCRYPTION_KEY` (32 bytes as hex or base64).
@@ -297,6 +309,35 @@ sensitive advertising actions and track spend against client and campaign limits
   and Meta states stay separate, so a campaign is never marked published because an approval
   was approved.
 
+## Automation and reliability
+
+The **Automation** tab on the business detail screen schedules campaign changes, reacts to Meta
+events and runs bulk operations, all with durable execution history.
+
+- Rules have three triggers: a schedule (one-off or repeated in minutes), a rejected campaign
+  review and an open budget threshold alert. Actions are pause, resume, archive, sync and
+  notify. Notifications are recorded in the execution result for Phase 8 delivery.
+- Scheduled actions run once at a chosen future time and can be cancelled; cancelling also
+  skips their pending executions. The API registers a BullMQ repeatable dispatcher every
+  minute, and `POST .../automation/dispatch` runs the same sweep on demand for one business.
+- Dispatch and execution are idempotent: dispatcher claims use conditional status updates,
+  executions carry a unique idempotency key, and workers hold expiring distributed locks.
+  Duplicate dispatches, repeated job deliveries and concurrent workers cannot run an action
+  twice.
+- Transient failures (Meta rate limits, 5xx, timeouts) retry with exponential backoff and full
+  jitter up to three attempts, then move to the dead-letter queue. Validation, permission and
+  policy failures fail immediately. Failed, skipped and dead-letter executions can be retried
+  from the history table.
+- Bulk pause, resume, archive and sync operations process up to 100 campaigns independently.
+  Each item keeps its own attempts, error and result, and the operation reports `completed`,
+  `partial` or `failed`. Retrying a partial operation resets and re-runs only failed items.
+- Automations and bulk operations honour the `automation.execute` and `bulk.execute` approval
+  policies. Requesters without decision rights queue a request that executes the stored action
+  after approval.
+- Token monitoring runs a scheduled sweep every six hours over connected Meta credentials in
+  addition to the platform-only manual sweep endpoint. Run data stays server-side and no token
+  is ever queued or returned.
+
 ## Scripts
 
 | Command | Description |
@@ -336,8 +377,11 @@ npm run migration:generate -w @adpilot/api -- src/database/migrations/DescribeCh
   review sync and tenant isolation), and the approvals and budgets pipeline (policy gating,
   payload versioning and stale-version rejection, self-decision and eligibility checks,
   execution failure and retry, budget ledger, Meta spend snapshots, threshold alerts,
-  acknowledgement and tenant isolation). Meta calls are mocked, so no live credentials are
-  required.
+  acknowledgement and tenant isolation), and the automation and reliability pipeline (rule and
+  schedule dispatch, duplicate-dispatch prevention, rejected-campaign and budget events,
+  automation and bulk approval gating, transient retry and dead-letter handling, partial bulk
+  failures with failed-item-only retries, and the token monitoring sweep). Meta calls and queue
+  producers are mocked, so no live credentials are required.
 - Frontend unit tests run with Vitest.
 - CI runs the e2e suite in a dedicated job with MySQL 8 and Redis service containers and
   applies migrations first.
@@ -364,4 +408,7 @@ in [DEVELOPMENT_PROGRESS.md](DEVELOPMENT_PROGRESS.md).
 - Approval payloads are immutable, hash-verified before execution and decided only by callers
   holding `approval.decide`; self-decisions are rejected. Budget ledger and spend snapshots are
   append-only.
+- Automation and bulk executions use database idempotency keys, conditional claims and
+  expiring distributed locks so retries, duplicate jobs and concurrent workers cannot repeat a
+  Meta mutation. Queue payloads contain identifiers only, and dead letters retain no secrets.
 - Tenant isolation is enforced in the backend, never by frontend filtering alone.

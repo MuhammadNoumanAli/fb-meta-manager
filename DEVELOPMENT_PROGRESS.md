@@ -1,9 +1,136 @@
 # AdPilot Development Progress
 
-**Current phase:** Phase 6 — Approval and Budget Management (complete)
+**Current phase:** Phase 7 — Automation and Reliability (complete)
 **Last updated:** 2026-11-17
-**API version:** 0.7.0
+**API version:** 0.8.0
 **Blueprint:** [docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md](docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md)
+
+---
+
+## Phase 7 — Automation and Reliability
+
+### Scope delivered
+
+- [x] Automation rules with schedule, rejected-campaign and budget-alert triggers
+- [x] Scheduled actions that run once at a chosen time and can be cancelled
+- [x] Execution history with trigger, attempts, result, error and approval link
+- [x] Execution engine with distributed locks, idempotency keys and conditional status claims
+- [x] Retry policy with exponential backoff, full jitter and transient/permanent classification
+- [x] Dead-letter queue for exhausted transient failures, with manual retry
+- [x] Approval gating for automation and bulk execution (`automation.execute`, `bulk.execute`)
+- [x] Bulk pause, resume, archive and sync operations with per-item status and errors
+- [x] Failed-item-only retries that never re-run succeeded campaigns
+- [x] Scheduled token-monitoring sweep every six hours plus the platform manual endpoint
+- [x] Automation tab with rules, schedules, execution history and bulk operations
+
+### Database migrations
+
+| Migration | Status |
+|---|---|
+| `1768000000000-Phase7AutomationReliability` | Applied locally |
+
+Adds `automation_rules`, `scheduled_actions`, `automation_executions`, `execution_locks`,
+`bulk_operations` and `bulk_operation_items`, and extends the approval target enum with
+`automation.execute` and `bulk.execute`. `automation_executions.idempotency_key` and
+`execution_locks.lock_key` are unique; `bulk_operation_items` is unique per operation and
+campaign. Business deletion cascades all automation records, while actor references are
+`SET NULL` so history survives membership removal.
+
+### API endpoints
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/businesses/:businessId/automation/rules` | `campaign.read` | List rules with trigger and active filters |
+| POST | `/api/v1/businesses/:businessId/automation/rules` | `campaign.update` | Create a rule |
+| GET | `/api/v1/businesses/:businessId/automation/rules/:ruleId` | `campaign.read` | Rule detail |
+| PATCH | `/api/v1/businesses/:businessId/automation/rules/:ruleId` | `campaign.update` | Update or toggle a rule |
+| DELETE | `/api/v1/businesses/:businessId/automation/rules/:ruleId` | `campaign.update` | Delete a rule |
+| POST | `/api/v1/businesses/:businessId/automation/rules/:ruleId/run` | `campaign.update` | Queue a manual run (`202`) |
+| GET | `/api/v1/businesses/:businessId/automation/scheduled-actions` | `campaign.read` | List scheduled actions by status |
+| POST | `/api/v1/businesses/:businessId/automation/scheduled-actions` | `campaign.update` | Schedule a future action |
+| POST | `/api/v1/businesses/:businessId/automation/scheduled-actions/:actionId/cancel` | `campaign.update` | Cancel a pending action |
+| GET | `/api/v1/businesses/:businessId/automation/executions` | `campaign.read` | Execution history with status filters |
+| GET | `/api/v1/businesses/:businessId/automation/executions/:executionId` | `campaign.read` | Execution detail |
+| POST | `/api/v1/businesses/:businessId/automation/executions/:executionId/retry` | `campaign.update` | Re-queue a failed, skipped or dead-letter execution |
+| POST | `/api/v1/businesses/:businessId/automation/dispatch` | `campaign.update` | Dispatch due schedules and events for one business |
+| GET | `/api/v1/businesses/:businessId/bulk-operations` | `campaign.read` | Bulk operation list |
+| POST | `/api/v1/businesses/:businessId/bulk-operations` | `campaign.update` | Start a bulk operation (direct or gated) |
+| GET | `/api/v1/businesses/:businessId/bulk-operations/:operationId` | `campaign.read` | Detail with per-item status and errors |
+| POST | `/api/v1/businesses/:businessId/bulk-operations/:operationId/retry` | `campaign.update` | Retry only failed items |
+
+The recurring dispatcher runs every 60 seconds from the `scheduled-actions` queue. It claims
+due actions, one-off and interval rules through a conditional status update, and event rules
+for rejected campaigns (once per campaign per day) and open budget alerts (once per alert).
+Executions are claimed with a conditional `pending → running` update and a unique idempotency
+key, so a duplicated dispatch or job delivery cannot run the same action twice. Automation
+mutations use `campaign.update`; reads use `campaign.read`; no new permissions were added.
+
+Transient failures (rate limits, 5xx, timeouts) retry with jittered exponential backoff up to
+three attempts and then move to the dead-letter queue. Validation, permission and policy
+failures are permanent and fail immediately. The classifier checks message keywords before the
+HTTP status because Meta errors are wrapped in a `502 Bad Gateway` exception. Cancelling a
+scheduled action marks its pending executions as skipped. Bulk operations use the same lock and
+classification helpers: each campaign item records its own attempts, error and result, and a
+retry resets only `failed` items before re-counting the operation as completed, partial or
+failed.
+
+### Frontend screens
+
+| Screen | Route | Status |
+|---|---|---|
+| Business detail — Automation tab (rules, schedules, executions, bulk operations) | `/businesses/:businessId?tab=automation` | Complete |
+| Approvals tab shows `automation.execute` and `bulk.execute` policies and filters | `/businesses/:businessId?tab=approvals` | Complete |
+
+### Security properties
+
+- Every automation, execution and bulk route resolves the business through the guard; foreign
+  identifiers return `404`.
+- Automation and bulk actions pass through the approval engine at execution time, so enabling
+  either policy gates requester runs without changing permissions.
+- Queue payloads carry only entity identifiers. Tokens are never queued, logged or returned.
+- Distributed locks and unique idempotency keys prevent concurrent or duplicate execution;
+  locks expire so a crashed worker cannot block a key permanently.
+- Retries are bounded, dead letters are retained, and dead-letter retries are explicit actions.
+- Bulk targets are validated against the business before any item is created; per-item calls
+  re-use the same tenant-scoped advertising service.
+
+### Verification
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | Pass (API + web) |
+| Typecheck | `npm run typecheck` | Pass (API + web) |
+| API unit tests | `npm run test -w @adpilot/api` | Pass (6 suites, 28 tests) |
+| Web unit tests | `npm run test -w @adpilot/web` | Pass (3 files, 18 tests) |
+| API e2e (MySQL + Redis) | `npm run test:e2e -w @adpilot/api` | Pass (8 suites, 81 tests) |
+| Build | `npm run build` | Pass (API dist + web dist) |
+| Acceptance criteria | duplicate dispatch ignored; rejected and budget events fire once; approval gating works; transient failures dead-letter after three attempts; bulk partial failures reported; failed-only retry leaves succeeded items untouched | Pass |
+
+Meta calls and queue producers are mocked in e2e tests, so no live Graph publishing or
+asynchronous job timing is required. The token sweep test exercises the processor directly.
+
+### Known issues / limitations
+
+- The dispatcher is a BullMQ repeatable job owned by the API process; running many replicas is
+  safe because claims are conditional, but only one scheduler registration is expected.
+- Event rules are evaluated on the one-minute dispatch sweep for all businesses, not pushed from
+  Meta webhooks. A rejected campaign therefore acts within about a minute of the review sync.
+- Notifications produced by `notify` rules are stored in execution results; email and WhatsApp
+  delivery remains Phase 8 work.
+- Bulk operations are capped at 100 campaigns per request, and each item retries inline up to
+  three times before being reported as failed.
+- Dead letters are retained in Redis without an admin purge endpoint.
+
+### Decisions requiring approval
+
+- Idempotency is enforced in the database (`idempotency_key` plus conditional claims) rather
+  than in worker memory, so retries and scaling cannot duplicate a Meta call.
+- Failure classification is keyword-first for wrapped Meta errors; retrying a validation error
+  would never succeed and only delays reporting.
+- Bulk failures are per item, and retries are per failed item, so a partially successful
+  operation never repeats side effects on campaigns that already changed.
+- Token monitoring is scheduled every six hours; the manual platform endpoint remains for
+  operators and health checks.
 
 ---
 
