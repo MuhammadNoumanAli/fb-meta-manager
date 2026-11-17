@@ -1,9 +1,136 @@
 # AdPilot Development Progress
 
-**Current phase:** Phase 4 — Meta Webhooks and Lead Integration (complete)
+**Current phase:** Phase 5 — Campaign and Advertisement Management (complete)
 **Last updated:** 2026-11-17
-**API version:** 0.5.0
+**API version:** 0.6.0
 **Blueprint:** [docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md](docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md)
+
+---
+
+## Phase 5 — Campaign and Advertisement Management
+
+### Scope delivered
+
+- [x] Campaign CRUD with objective, Meta ad account, budgets, schedule and special ad categories
+- [x] Ad set CRUD with optimisation goal, billing event, budgets, bid, schedule and JSON targeting
+- [x] Advertisement CRUD linked to an ad set and a creative
+- [x] Creative management with headline, body, description, call to action, destination and Meta page
+- [x] Media uploads (PNG/JPEG/WebP, 8 MB limit) with checksum, disk storage and authenticated previews
+- [x] Meta campaign publishing through the advertising provider abstraction and a BullMQ queue
+- [x] Campaign status push (activate, pause, archive) with Meta-first ordering
+- [x] Campaign and campaign-list synchronisation of Meta state
+- [x] Separate local status, raw external status, delivery status and Meta review status
+- [x] Review and status history timelines per campaign
+- [x] Failure handling that never marks a campaign published when any Meta call fails
+- [x] Campaigns UI with builder, creative manager, media library, publish checklist and live state
+
+### Database migrations
+
+| Migration | Status |
+|---|---|
+| `1766000000000-Phase5Campaigns` | Applied locally |
+
+Adds `assets`, `creatives`, `campaigns`, `ad_sets`, `advertisements`, `campaign_status_history`,
+`meta_review_status_history` and `platform_sync_logs`. Campaign structure is scoped by
+`business_id`; deleting a business cascades its campaigns, creatives and assets, while
+author/deleter references are `SET NULL`. Unique indices prevent duplicate storage keys and
+duplicate history entries; hot list paths are indexed by business, status and creation time.
+
+### API endpoints
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/businesses/:businessId/campaigns` | `campaign.read` | List, search, filter and paginate campaigns |
+| POST | `/api/v1/businesses/:businessId/campaigns` | `campaign.create` | Create a draft campaign |
+| POST | `/api/v1/businesses/:businessId/campaigns/sync` | `campaign.read` | Synchronise every published campaign |
+| GET | `/api/v1/businesses/:businessId/campaigns/:campaignId` | `campaign.read` | Campaign detail with ad sets, ads and histories |
+| PATCH | `/api/v1/businesses/:businessId/campaigns/:campaignId` | `campaign.update` | Edit a draft campaign |
+| DELETE | `/api/v1/businesses/:businessId/campaigns/:campaignId` | `campaign.update` | Delete a draft campaign |
+| PATCH | `/api/v1/businesses/:businessId/campaigns/:campaignId/status` | `campaign.update` | Activate, pause or archive |
+| POST | `/api/v1/businesses/:businessId/campaigns/:campaignId/publish` | `campaign.publish` | Queue a Meta publish (`202`) |
+| POST | `/api/v1/businesses/:businessId/campaigns/:campaignId/sync` | `campaign.read` | Refresh one campaign from Meta |
+| GET/POST | `/api/v1/businesses/:businessId/campaigns/:campaignId/ad-sets` | `campaign.read` / `campaign.create` | List or add ad sets |
+| GET | `/api/v1/businesses/:businessId/ad-sets` | `campaign.read` | List ad sets across campaigns |
+| PATCH/DELETE | `/api/v1/businesses/:businessId/ad-sets/:adSetId` | `campaign.update` | Edit or delete an ad set |
+| PATCH | `/api/v1/businesses/:businessId/ad-sets/:adSetId/status` | `campaign.update` | Update ad set status |
+| GET/POST | `/api/v1/businesses/:businessId/ad-sets/:adSetId/advertisements` | `campaign.read` / `campaign.create` | List or add advertisements |
+| GET/PATCH/DELETE | `/api/v1/businesses/:businessId/advertisements/:advertisementId` | `campaign.read` / `campaign.update` | Advertisement detail and edits |
+| PATCH | `/api/v1/businesses/:businessId/advertisements/:advertisementId/status` | `campaign.update` | Update advertisement status |
+| GET/POST | `/api/v1/businesses/:businessId/creatives` | `campaign.read` / `campaign.create` | List or create creatives |
+| PATCH/DELETE | `/api/v1/businesses/:businessId/creatives/:creativeId` | `campaign.update` | Edit or delete a creative |
+| GET/POST | `/api/v1/businesses/:businessId/assets` | `campaign.read` / `campaign.create` | List or upload media |
+| GET | `/api/v1/businesses/:businessId/assets/:assetId/content` | `campaign.read` | Stream the authenticated media file |
+| DELETE | `/api/v1/businesses/:businessId/assets/:assetId` | `campaign.create` | Delete unused media |
+
+Local status is `draft`, `publishing`, `active`, `paused`, `archived` or `error`. The raw Meta
+status is stored separately as `externalStatus`, while `deliveryStatus` (`active`, `paused`,
+`archived`, `deleted`, `pending_billing_info`, `in_process`, `with_issues`, `unknown`) and
+`metaReviewStatus` (`unknown`, `in_review`, `approved`, `rejected`, `disabled`) are normalised
+by the status mapper.
+
+### Frontend screens
+
+| Screen | Route | Status |
+|---|---|---|
+| Business detail — Campaigns tab (list, filters, create dialog) | `/businesses/:businessId?tab=campaigns` | Complete |
+| Campaign detail panel (structure, publish checklist, histories) | `/businesses/:businessId?tab=campaigns` | Complete |
+| Creatives and media sub-tab (creative editor, media library) | `/businesses/:businessId?tab=campaigns` | Complete |
+
+### Security properties
+
+- Publishing decrypts the business Meta token inside the API process only. No token, ciphertext
+  or Graph credential is returned by any advertising endpoint.
+- Every campaign, ad set, advertisement, creative, asset and history query is scoped through
+  the business permission guard; cross-tenant identifiers return `404`.
+- Uploaded media is validated by MIME type and size, stored under a generated storage key and
+  served only through an authenticated endpoint. Original file names are metadata only.
+- Publishing is idempotent: a campaign already `publishing` or published cannot be queued or
+  recreated, and the job runs with a single attempt.
+- Local `publishedAt`, external IDs and Meta state are written only after every required Graph
+  call succeeds. A failure sets `error`, stores `lastError` and leaves the campaign unpublished.
+- Edits and deletes on pushed or published records are blocked so AdPilot cannot silently
+  diverge from Meta.
+- Status changes, publish requests, publish outcomes and review transitions are written to
+  audit and history tables.
+
+### Verification
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | Pass (API + web) |
+| Typecheck | `npm run typecheck` | Pass (API + web) |
+| API unit tests | `npm run test -w @adpilot/api` | Pass (5 suites, 24 tests) |
+| Web unit tests | `npm run test -w @adpilot/web` | Pass (3 files, 18 tests) |
+| API e2e (MySQL + Redis) | `npm run test:e2e -w @adpilot/api` | Pass (6 suites, 63 tests) |
+| Build | `npm run build` | Pass (API dist + web dist) |
+| Browser flow | create campaign → add ad set → upload media → create creative → publish checklist | Pass |
+| Acceptance criteria | campaigns created through AdPilot, external IDs stored, review state visible, rejected publishes stay unpublished | Pass |
+
+Meta calls in tests use a mocked advertising provider; no live Graph publishing is performed.
+
+### Known issues / limitations
+
+- Publishing is asynchronous. The UI polls the campaign for up to 30 seconds after a queued
+  publish; longer Meta outages require the user to refresh.
+- Sync updates state and review status but does not import Meta campaigns created outside
+  AdPilot; that import flow arrives with reliability work in Phase 7.
+- Media lives on the API host's local disk. Object storage and signed CDN URLs are a deployment
+  concern; the storage key boundary already isolates the location.
+- Creatives support a single image asset. Video, carousel and dynamic creative formats are not
+  implemented yet.
+- Only the Meta advertising provider exists. The provider interface is ready for Google and
+  TikTok in Phase 13.
+
+### Decisions requiring approval
+
+- AdPilot keeps its own lifecycle status instead of mirroring Meta's status values, so a Meta
+  API failure can never be mistaken for a successful publish.
+- Campaign structure is locked once published. Further changes must be made in Meta Ads Manager
+  until Meta change APIs are integrated in Phase 7.
+- Publishing continues through ad sets and advertisements after the campaign is created; a
+  child failure aborts the job and marks the campaign `error` without inventing external IDs.
+- Ad set targeting is entered as JSON and validated for structure only; richer targeting
+  builders are deferred.
 
 ---
 
@@ -512,7 +639,7 @@ Migration infrastructure is configured: `apps/api/src/database/data-source.ts` p
 | 2 — Agency client onboarding and invitations | Complete |
 | 3 — Meta authentication and asset integration | Complete |
 | 4 — Meta webhooks and lead integration | Complete |
-| 5 — Campaign and advertisement management | Not started |
+| 5 — Campaign and advertisement management | Complete |
 | 6 — Approval and budget management | Not started |
 | 7 — Automation and reliability | Not started |
 | 8 — WhatsApp Business integration | Not started |

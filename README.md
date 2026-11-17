@@ -71,8 +71,8 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 4. Start Redis with `maxmemory-policy noeviction` (required by BullMQ). With Docker the
    compose file already applies this setting.
 
-5. Apply database migrations (creates the identity, tenancy, invitation, Meta integration and
-   webhook/lead schema, and seeds roles/permissions):
+5. Apply database migrations (creates the identity, tenancy, invitation, Meta integration,
+   webhook/lead and campaign schema, and seeds roles/permissions):
 
    ```bash
    npm run migration:run
@@ -129,6 +129,24 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 | `POST /api/v1/leads/intake` | Public website lead intake (keyed) |
 | `GET /api/v1/businesses/:businessId/integrations/meta/webhook-events[/:eventId]` | Webhook delivery history and detail |
 | `POST /api/v1/businesses/:businessId/integrations/meta/webhook-events/:eventId/retry` | Retry a failed delivery |
+| `GET/POST /api/v1/businesses/:businessId/campaigns` | Campaign list and creation |
+| `GET/PATCH/DELETE /api/v1/businesses/:businessId/campaigns/:campaignId` | Campaign detail, edits and deletion |
+| `PATCH /api/v1/businesses/:businessId/campaigns/:campaignId/status` | Activate, pause or archive a campaign |
+| `POST /api/v1/businesses/:businessId/campaigns/:campaignId/publish` | Queue a Meta publish |
+| `POST /api/v1/businesses/:businessId/campaigns/sync` | Synchronise all published campaigns |
+| `POST /api/v1/businesses/:businessId/campaigns/:campaignId/sync` | Synchronise one campaign |
+| `GET/POST /api/v1/businesses/:businessId/campaigns/:campaignId/ad-sets` | Ad sets for a campaign |
+| `GET /api/v1/businesses/:businessId/ad-sets` | Ad sets across campaigns |
+| `PATCH/DELETE /api/v1/businesses/:businessId/ad-sets/:adSetId` | Ad set edits and deletion |
+| `PATCH /api/v1/businesses/:businessId/ad-sets/:adSetId/status` | Update an ad set status |
+| `GET/POST /api/v1/businesses/:businessId/ad-sets/:adSetId/advertisements` | Advertisements for an ad set |
+| `GET/PATCH/DELETE /api/v1/businesses/:businessId/advertisements/:advertisementId` | Advertisement detail and edits |
+| `PATCH /api/v1/businesses/:businessId/advertisements/:advertisementId/status` | Update an advertisement status |
+| `GET/POST /api/v1/businesses/:businessId/creatives` | Creative list and creation |
+| `PATCH/DELETE /api/v1/businesses/:businessId/creatives/:creativeId` | Creative edits and deletion |
+| `GET/POST /api/v1/businesses/:businessId/assets` | Media library and uploads |
+| `GET /api/v1/businesses/:businessId/assets/:assetId/content` | Authenticated media content |
+| `DELETE /api/v1/businesses/:businessId/assets/:assetId` | Delete unused media |
 | `GET /api/v1/audit-logs?businessId=` | Audit trail for a business |
 | `GET /api/docs` | Swagger UI |
 
@@ -215,6 +233,28 @@ business detail screen.
 - Lead details need the `leads_retrieval` permission on the Meta connection. The API never
   returns Meta tokens or their ciphertext, and all lead routes enforce business isolation.
 
+## Campaign management
+
+The **Campaigns** tab on the business detail screen builds campaigns, ad sets, advertisements,
+creatives and a media library, then publishes them to the connected Meta ad account.
+
+- A campaign is created as a draft with an objective, Meta ad account, budget and schedule;
+  ad sets add optimisation goal, billing event, budgets, bid, targeting and dates; each
+  advertisement links one creative.
+- Publishing is queued and processed asynchronously. AdPilot creates the campaign, its ad sets,
+  its advertisements and pushes creatives before stamping external IDs, so a failed Graph call
+  sets `error` and leaves the campaign unpublished.
+- Local status (`draft`, `publishing`, `active`, `paused`, `archived`, `error`), raw
+  `externalStatus`, normalised `deliveryStatus` and `metaReviewStatus` are stored separately.
+  Review and status histories are recorded on every transition.
+- Published structure is locked against edits and deletes. Status changes are pushed to Meta
+  before the local record changes, and `sync` refreshes delivery and review state.
+- Media uploads accept PNG, JPEG and WebP up to 8 MB. Files are checksummed, stored under a
+  generated key and served only through an authenticated content endpoint.
+- Tokens stay server-side throughout; advertising responses never include credentials, and all
+  campaign routes enforce business isolation. Live publishing requires a connected Meta ad
+  account and the `ads_management` permission.
+
 ## Scripts
 
 | Command | Description |
@@ -246,10 +286,13 @@ npm run migration:generate -w @adpilot/api -- src/database/migrations/DescribeCh
   replay rejection, password reset, RBAC, tenant isolation, the agency/client access model,
   client invitations (creation, preview, acceptance, expiry, revocation, superseding and
   audit), client ownership after an agency relationship ends, Meta OAuth, encrypted token
-  storage, permission drift, asset discovery, revoked access and reauthorization, and the
+  storage, permission drift, asset discovery, revoked access and reauthorization, the
   webhook/lead pipeline (challenge verification, HMAC rejection, idempotent deliveries, lead
-  normalisation, website keys and intake, failed-event retry and tenant isolation). Meta calls
-  are mocked, so no live credentials are required.
+  normalisation, website keys and intake, failed-event retry and tenant isolation), and the
+  campaign pipeline (structure CRUD, media validation, creative deletion guards, publish and
+  external ID storage, structure locking, status push ordering, rejected child publishes,
+  review sync and tenant isolation). Meta calls are mocked, so no live credentials are
+  required.
 - Frontend unit tests run with Vitest.
 - CI runs the e2e suite in a dedicated job with MySQL 8 and Redis service containers and
   applies migrations first.
@@ -271,4 +314,6 @@ in [DEVELOPMENT_PROGRESS.md](DEVELOPMENT_PROGRESS.md).
   comparison; rejected deliveries are never stored.
 - Website lead keys are stored only as SHA-256 hashes with a four-character hint and can be
   rotated or revoked at any time.
+- Uploaded ad media is type- and size-validated, stored outside the web root under a generated
+  key and served only to authorized business members.
 - Tenant isolation is enforced in the backend, never by frontend filtering alone.
