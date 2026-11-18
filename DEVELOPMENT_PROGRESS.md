@@ -1,9 +1,146 @@
 # AdPilot Development Progress
 
-**Current phase:** Phase 7 — Automation and Reliability (complete)
-**Last updated:** 2026-11-17
-**API version:** 0.8.0
+**Current phase:** Phase 8 — WhatsApp Business Integration (complete)
+**Last updated:** 2026-11-18
+**API version:** 0.9.0
 **Blueprint:** [docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md](docs/ADPILOT_TECHNICAL_ARCHITECTURE_v2.0.md)
+
+---
+
+## Phase 8 — WhatsApp Business Integration
+
+### Scope delivered
+
+- [x] Messaging provider abstraction with a registry keyed by provider
+- [x] Meta WhatsApp Cloud API adapter with account verification and quality rating
+- [x] Optional Twilio adapter using ContentSid templates and signed status callbacks
+- [x] Per-business WhatsApp account connections with encrypted credentials and sender numbers
+- [x] Template management with draft, submitted, approved, rejected and disabled states
+- [x] Seeded English and Bahasa Malaysia lead acknowledgment templates
+- [x] Consent records, opt-out keywords and a communication suppression list
+- [x] Automatic lead acknowledgment after Meta and website lead intake
+- [x] Signed Meta and Twilio delivery-status webhooks with monotonic status ranking
+- [x] Message history, event timelines, safe retries and idempotent sends
+- [x] WhatsApp tab and lead-level messaging panel in the CRM
+
+### Database migrations
+
+| Migration | Status |
+|---|---|
+| `1769000000000-Phase8WhatsApp` | Applied locally |
+
+Adds `whatsapp_accounts`, `whatsapp_phone_numbers`, `whatsapp_templates`, `whatsapp_messages`,
+`whatsapp_message_events`, `lead_consents` and `communication_suppressions`, and seeds the
+`whatsapp.read` and `whatsapp.manage` permissions on existing roles. Accounts are unique per
+business, provider and external account; phone numbers are unique per account and external ID;
+templates are unique per business, name and language; messages carry a unique idempotency key.
+Business deletion cascades every WhatsApp record, while user references are `SET NULL`.
+
+### API endpoints
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/businesses/:businessId/whatsapp/accounts` | `whatsapp.read` | Connected accounts and sender numbers |
+| GET | `/api/v1/businesses/:businessId/whatsapp/accounts/:accountId` | `whatsapp.read` | Account detail |
+| POST | `/api/v1/businesses/:businessId/whatsapp/accounts` | `whatsapp.manage` | Connect a Meta or Twilio account |
+| PATCH | `/api/v1/businesses/:businessId/whatsapp/accounts/:accountId` | `whatsapp.manage` | Rename or rotate credentials |
+| POST | `/api/v1/businesses/:businessId/whatsapp/accounts/:accountId/validate` | `whatsapp.manage` | Verify credentials and refresh sender quality |
+| DELETE | `/api/v1/businesses/:businessId/whatsapp/accounts/:accountId` | `whatsapp.manage` | Disable an account |
+| GET | `/api/v1/businesses/:businessId/whatsapp/templates` | `whatsapp.read` | Template list with status filters |
+| POST | `/api/v1/businesses/:businessId/whatsapp/templates` | `whatsapp.manage` | Create a template |
+| POST | `/api/v1/businesses/:businessId/whatsapp/templates/seed-defaults` | `whatsapp.manage` | Seed bilingual acknowledgment templates |
+| PATCH | `/api/v1/businesses/:businessId/whatsapp/templates/:templateId` | `whatsapp.manage` | Update a template |
+| POST | `/api/v1/businesses/:businessId/whatsapp/templates/:templateId/submit` | `whatsapp.manage` | Mark a template submitted |
+| POST | `/api/v1/businesses/:businessId/whatsapp/templates/:templateId/approve` | `whatsapp.manage` | Approve a submitted template |
+| POST | `/api/v1/businesses/:businessId/whatsapp/templates/:templateId/reject` | `whatsapp.manage` | Reject with a reason |
+| POST | `/api/v1/businesses/:businessId/whatsapp/templates/:templateId/disable` | `whatsapp.manage` | Disable a template |
+| GET | `/api/v1/businesses/:businessId/whatsapp/messages` | `whatsapp.read` | Paginated history with lead, account, status and search filters |
+| GET | `/api/v1/businesses/:businessId/whatsapp/messages/:messageId` | `whatsapp.read` | Message detail with event timeline |
+| POST | `/api/v1/businesses/:businessId/whatsapp/messages` | `whatsapp.manage` | Send an approved template (synchronous consent gate) |
+| POST | `/api/v1/businesses/:businessId/whatsapp/messages/:messageId/retry` | `whatsapp.manage` | Re-queue a failed message |
+| GET | `/api/v1/businesses/:businessId/whatsapp/consents` | `whatsapp.read` | Consent records by lead or phone |
+| POST | `/api/v1/businesses/:businessId/whatsapp/consents` | `whatsapp.manage` | Record a grant or opt-out |
+| GET | `/api/v1/businesses/:businessId/whatsapp/suppressions` | `whatsapp.read` | Suppression list |
+| POST | `/api/v1/businesses/:businessId/whatsapp/suppressions` | `whatsapp.manage` | Block a number |
+| DELETE | `/api/v1/businesses/:businessId/whatsapp/suppressions/:suppressionId` | `whatsapp.manage` | Remove a block |
+| GET | `/api/v1/webhooks/whatsapp/meta` | Public | Meta challenge handshake |
+| POST | `/api/v1/webhooks/whatsapp/meta` | Public (HMAC) | Inbound messages and delivery statuses |
+| POST | `/api/v1/webhooks/whatsapp/twilio` | Public (HMAC) | Twilio delivery callbacks and inbound messages |
+
+Account credentials are encrypted with the integration key and never returned. Every send
+evaluates suppression first, then the lead consent record, then the lead consent status, so a
+number blocked for an opt-out or complaint cannot receive a template even if a lead record
+says otherwise. Blocked attempts are stored with `suppressed` or `skipped` status and a
+reason, which keeps the block auditable without an exception. Successful sends move through
+`queued`, `sending`, `sent`, `delivered` and `read`; status webhooks are deduplicated by
+message, status and timestamp, and an older status never moves a message backwards.
+
+Sending is idempotent per acknowledgment lead (`ack:<leadId>`), per explicit manual key and
+per inbound provider message (`in:<externalMessageId>`). The `whatsapp-messages` queue retries
+transient provider failures with jittered exponential backoff up to three attempts; permanent
+errors fail immediately on the first attempt. Retrying a failed message creates no duplicate
+row and reuses the same record, while blocked messages cannot be retried into delivery.
+
+### Frontend screens
+
+| Screen | Route | Status |
+|---|---|---|
+| Business detail — WhatsApp tab (accounts, templates, history, consent) | `/businesses/:businessId?tab=whatsapp` | Complete |
+| Lead detail dialog — consent state, approved template send, message history | Leads tab dialog | Complete |
+
+### Security properties
+
+- Every WhatsApp route resolves the business through the guard; foreign identifiers return
+  `404`, and credentials are never part of any response.
+- Provider tokens are encrypted at rest with the integration key; the frontend only ever sends
+  a token once when connecting or rotating an account.
+- Consent and suppression are enforced server-side before a provider call, in the same
+  synchronous path that records the blocked attempt.
+- Meta webhooks verify `X-Hub-Signature-256` over the raw body with `META_APP_SECRET`; Twilio
+  callbacks verify the HMAC-SHA1 signature over the configured external webhook URL and sorted
+  parameters. Rejected deliveries are not processed.
+- Queue payloads carry message identifiers only, no credentials or message content.
+- Status transitions are monotonic and deduplicated, so replayed or out-of-order callbacks
+  cannot corrupt delivery state.
+
+### Verification
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | Pass (API + web) |
+| Typecheck | `npm run typecheck` | Pass (API + web) |
+| API unit tests | `npm run test -w @adpilot/api` | Pass (9 suites, 45 tests) |
+| Web unit tests | `npm run test -w @adpilot/web` | Pass (3 files, 18 tests) |
+| API e2e (MySQL + Redis) | `npm run test:e2e -w @adpilot/api` | Pass (9 suites, 90 tests) |
+| Build | `npm run build` | Pass (API dist + web dist) |
+| Acceptance criteria | eligible leads receive bilingual approved templates; suppressed or non-consenting leads are blocked before provider calls; delivered and read statuses are tracked; transient failures retry and a failed message can be retried without duplication | Pass |
+
+Provider calls are mocked in e2e tests and the queue processor is invoked synchronously, so no
+live WhatsApp credentials or asynchronous job timing is required.
+
+### Known issues / limitations
+
+- Template approval is recorded inside AdPilot. Submitting templates to Meta's template API
+  automatically is not implemented; an operator approves them after review.
+- Only template messages are sent. Free-form text, media, buttons and the 24-hour customer
+  service window are not modelled yet.
+- Inbound messages are stored for context and opt-out detection; there is no agent inbox or
+  conversational reply flow.
+- Suppression matches on digits only, so numbers with a missing country code are compared
+  literally.
+- The `whatsapp-messages` queue runs in-process with the API; the concurrency setting is a
+  single worker per process.
+
+### Decisions requiring approval
+
+- Consent evaluation is synchronous before queueing, so a blocked marketing message never
+  reaches a provider and the reason is visible in history.
+- A fresh explicit opt-in clears opt-out suppressions but never complaint suppressions, which
+  remain until an administrator removes them.
+- Retries reuse the existing message row and its idempotency key rather than creating a new
+  attempt record, keeping history readable and duplicate-free.
+- Delivery state is ranked rather than last-write-wins, so delayed status callbacks cannot
+  downgrade a delivered or read message.
 
 ---
 
@@ -115,8 +252,8 @@ asynchronous job timing is required. The token sweep test exercises the processo
   safe because claims are conditional, but only one scheduler registration is expected.
 - Event rules are evaluated on the one-minute dispatch sweep for all businesses, not pushed from
   Meta webhooks. A rejected campaign therefore acts within about a minute of the review sync.
-- Notifications produced by `notify` rules are stored in execution results; email and WhatsApp
-  delivery remains Phase 8 work.
+- Notifications produced by `notify` rules are stored in execution results; outbound delivery
+  to email or WhatsApp is not wired yet.
 - Bulk operations are capped at 100 campaigns per request, and each item retries inline up to
   three times before being reported as failed.
 - Dead letters are retained in Redis without an admin purge endpoint.
@@ -248,7 +385,8 @@ performed.
 
 ### Known issues / limitations
 
-- Approval notifications are in-app only. Email and WhatsApp delivery arrives with Phase 8.
+- Approval notifications are in-app only. Outbound email and WhatsApp delivery is not wired
+  yet.
 - Spend synchronisation runs during campaign sync; a scheduled spend poller is part of the
   reliability work in Phase 7.
 - Budgets are governance records. They do not change the budget on Meta; budget write-back
@@ -697,7 +835,7 @@ and `industry`, `description`, `website`, `contact_email`, `contact_phone` to `b
 ### Known issues / limitations
 
 - Email delivery is not configured: outside production the API returns the acceptance link;
-  in production the link must be delivered manually until notifications arrive in Phase 8.
+  in production the link must be delivered manually through an out-of-band channel.
 - Invitations target client owners. Adding staff to an existing business still uses the
   add-member endpoint against registered accounts.
 - The invitation list intentionally does not show the raw link because only hashes exist.

@@ -72,7 +72,8 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
    compose file already applies this setting.
 
 5. Apply database migrations (creates the identity, tenancy, invitation, Meta integration,
-   webhook/lead and campaign schema, adds approvals and budgets, and seeds roles/permissions):
+   webhook/lead, campaign, approval, budget, automation and WhatsApp schema, and seeds
+   roles/permissions):
 
    ```bash
    npm run migration:run
@@ -171,6 +172,20 @@ DEVELOPMENT_PROGRESS.md Phase-by-phase delivery tracker
 | `GET/POST /api/v1/businesses/:businessId/bulk-operations` | Bulk operation list and creation |
 | `GET /api/v1/businesses/:businessId/bulk-operations/:operationId` | Bulk detail with per-item results |
 | `POST /api/v1/businesses/:businessId/bulk-operations/:operationId/retry` | Retry only failed items |
+| `GET/POST /api/v1/businesses/:businessId/whatsapp/accounts` | WhatsApp account list and connection |
+| `GET/PATCH/DELETE /api/v1/businesses/:businessId/whatsapp/accounts/:accountId` | Account detail, credential rotation and disable |
+| `POST /api/v1/businesses/:businessId/whatsapp/accounts/:accountId/validate` | Verify credentials and refresh sender quality |
+| `GET/POST /api/v1/businesses/:businessId/whatsapp/templates` | Template list and creation |
+| `POST /api/v1/businesses/:businessId/whatsapp/templates/seed-defaults` | Seed bilingual acknowledgment templates |
+| `PATCH /api/v1/businesses/:businessId/whatsapp/templates/:templateId` | Update a template |
+| `POST /api/v1/businesses/:businessId/whatsapp/templates/:templateId/:action` | Submit, approve, reject or disable a template |
+| `GET/POST /api/v1/businesses/:businessId/whatsapp/messages` | Message history and template sending |
+| `GET /api/v1/businesses/:businessId/whatsapp/messages/:messageId` | Message detail with event timeline |
+| `POST /api/v1/businesses/:businessId/whatsapp/messages/:messageId/retry` | Retry a failed message |
+| `GET/POST /api/v1/businesses/:businessId/whatsapp/consents` | Consent records and manual grants or opt-outs |
+| `GET/POST/DELETE /api/v1/businesses/:businessId/whatsapp/suppressions[/:suppressionId]` | Communication block list |
+| `GET/POST /api/v1/webhooks/whatsapp/meta` | WhatsApp challenge and signed delivery intake |
+| `POST /api/v1/webhooks/whatsapp/twilio` | Signed Twilio status and inbound callbacks |
 | `GET /api/v1/audit-logs?businessId=` | Audit trail for a business |
 | `GET /api/docs` | Swagger UI |
 
@@ -203,7 +218,7 @@ existing account or creates one; they become the business owner either way.
   can set the workspace timezone, currency and business profile on first membership.
 - Agency staff manage invitations with `agency.manage`; cross-agency attempts return `404`.
 - Email delivery is not configured yet, so outside production the API returns the acceptance
-  link; in production the link must be delivered through a channel that arrives in Phase 8.
+  link; in production the link must be delivered through an out-of-band channel.
 
 ## Meta integrations
 
@@ -316,7 +331,8 @@ events and runs bulk operations, all with durable execution history.
 
 - Rules have three triggers: a schedule (one-off or repeated in minutes), a rejected campaign
   review and an open budget threshold alert. Actions are pause, resume, archive, sync and
-  notify. Notifications are recorded in the execution result for Phase 8 delivery.
+  notify. Notifications are recorded in the execution result; outbound notification delivery is
+  not wired to email or WhatsApp yet.
 - Scheduled actions run once at a chosen future time and can be cancelled; cancelling also
   skips their pending executions. The API registers a BullMQ repeatable dispatcher every
   minute, and `POST .../automation/dispatch` runs the same sweep on demand for one business.
@@ -337,6 +353,34 @@ events and runs bulk operations, all with durable execution history.
 - Token monitoring runs a scheduled sweep every six hours over connected Meta credentials in
   addition to the platform-only manual sweep endpoint. Run data stays server-side and no token
   is ever queued or returned.
+
+## WhatsApp messaging
+
+The **WhatsApp** tab on the business detail screen connects WhatsApp providers, manages
+templates, consent and message history; the lead dialog can send an approved template directly.
+
+- Accounts are connected per business for either the Meta Cloud API or Twilio. Credentials are
+  encrypted with the integration key, never returned, and can be rotated or disabled. A
+  validation call refreshes sender numbers, display names and Meta quality ratings.
+- Templates move through draft, submitted, approved, rejected and disabled states. Seeding
+  creates English and Bahasa Malaysia `lead_acknowledgment` templates with variables for the
+  lead name and business name. Only approved, enabled templates can be sent.
+- Every send is checked server-side in this order: suppression list (opt-outs and complaints),
+  recorded lead consent, then the lead consent status on the record. Blocked attempts are kept
+  with `suppressed` or `skipped` status and the reason, so nothing is sent without consent.
+- Captured Meta Lead Ads and website leads trigger an automatic acknowledgment when a template
+  exists for the lead language (English fallback), using the `ack:<leadId>` idempotency key so a
+  repeated intake cannot send twice.
+- Messages move through `queued`, `sending`, `sent`, `delivered` and `read`; provider callbacks
+  are deduplicated and ranked so out-of-order events cannot move state backwards. Failures keep
+  their error and attempts, and a failed message can be retried without creating a duplicate.
+- Registered webhooks: `GET/POST /webhooks/whatsapp/meta` verifies `X-Hub-Signature-256` with
+  `META_APP_SECRET`; `POST /webhooks/whatsapp/twilio` verifies the Twilio HMAC-SHA1 signature
+  over `TWILIO_WEBHOOK_URL` and sorted parameters.
+- Configure `WHATSAPP_PROVIDER`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`,
+  `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_API_VERSION`,
+  `WHATSAPP_GRAPH_BASE_URL`, `TWILIO_API_BASE_URL` and `TWILIO_WEBHOOK_URL` as optional
+  platform defaults; per-business credentials entered in the app take precedence.
 
 ## Scripts
 
@@ -380,8 +424,11 @@ npm run migration:generate -w @adpilot/api -- src/database/migrations/DescribeCh
   acknowledgement and tenant isolation), and the automation and reliability pipeline (rule and
   schedule dispatch, duplicate-dispatch prevention, rejected-campaign and budget events,
   automation and bulk approval gating, transient retry and dead-letter handling, partial bulk
-  failures with failed-item-only retries, and the token monitoring sweep). Meta calls and queue
-  producers are mocked, so no live credentials are required.
+  failures with failed-item-only retries, and the token monitoring sweep), and the WhatsApp
+  pipeline (encrypted accounts and hidden credentials, bilingual template seeding, approved-only
+  sending, consent and suppression blocking, signed Meta and Twilio webhooks with monotonic
+  status tracking, opt-out detection, retry semantics and tenant isolation). Meta, WhatsApp and
+  queue producers are mocked, so no live credentials are required.
 - Frontend unit tests run with Vitest.
 - CI runs the e2e suite in a dedicated job with MySQL 8 and Redis service containers and
   applies migrations first.
@@ -411,4 +458,7 @@ in [DEVELOPMENT_PROGRESS.md](DEVELOPMENT_PROGRESS.md).
 - Automation and bulk executions use database idempotency keys, conditional claims and
   expiring distributed locks so retries, duplicate jobs and concurrent workers cannot repeat a
   Meta mutation. Queue payloads contain identifiers only, and dead letters retain no secrets.
+- WhatsApp credentials are encrypted at rest and never returned; sends are blocked before the
+  provider unless consent and suppression checks pass, and provider webhooks are
+  signature-verified before any status change is applied.
 - Tenant isolation is enforced in the backend, never by frontend filtering alone.
