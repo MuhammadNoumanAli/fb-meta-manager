@@ -18,6 +18,8 @@ export const PERMISSIONS = {
   APPROVAL_DECIDE: 'approval.decide',
   LEAD_READ: 'lead.read',
   LEAD_MANAGE: 'lead.manage',
+  WHATSAPP_READ: 'whatsapp.read',
+  WHATSAPP_MANAGE: 'whatsapp.manage',
   REPORT_READ: 'report.read',
   INTEGRATION_READ: 'integration.read',
   INTEGRATION_MANAGE: 'integration.manage',

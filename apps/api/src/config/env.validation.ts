@@ -54,6 +54,10 @@ export const envValidationSchema = Joi.object({
   WHATSAPP_PHONE_NUMBER_ID: Joi.string().allow('').optional(),
   WHATSAPP_BUSINESS_ACCOUNT_ID: Joi.string().allow('').optional(),
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: Joi.string().allow('').optional(),
+  WHATSAPP_API_VERSION: Joi.string().allow('').optional(),
+  WHATSAPP_GRAPH_BASE_URL: Joi.string().uri().allow('').optional(),
+  TWILIO_API_BASE_URL: Joi.string().uri().allow('').optional(),
+  TWILIO_WEBHOOK_URL: Joi.string().uri().allow('').optional(),
 
   AWS_ACCESS_KEY_ID: Joi.string().allow('').optional(),
   AWS_SECRET_ACCESS_KEY: Joi.string().allow('').optional(),
