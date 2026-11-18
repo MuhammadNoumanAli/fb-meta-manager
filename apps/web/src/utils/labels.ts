@@ -280,3 +280,96 @@ const BILLING_EVENT_LABELS: Record<string, string> = {
 export const formatBillingEvent = (event: string): string =>
   BILLING_EVENT_LABELS[event] ?? formatStatus(event);
 
+const WHATSAPP_ACCOUNT_STATUS_LABELS: Record<string, string> = {
+  active: 'Connected',
+  attention: 'Needs attention',
+  disabled: 'Disabled',
+};
+
+export const formatWhatsappAccountStatus = (status: string): string =>
+  WHATSAPP_ACCOUNT_STATUS_LABELS[status] ?? formatStatus(status);
+
+export const whatsappAccountStatusColor = (status: string): string => {
+  switch (status) {
+    case 'active':
+      return 'success';
+    case 'attention':
+      return 'warning';
+    case 'disabled':
+      return 'error';
+    default:
+      return 'default';
+  }
+};
+
+export const formatWhatsappProvider = (provider: string): string => {
+  switch (provider) {
+    case 'meta':
+      return 'Meta Cloud API';
+    case 'twilio':
+      return 'Twilio';
+    default:
+      return formatStatus(provider);
+  }
+};
+
+export const formatWhatsappTemplateStatus = (status: string): string =>
+  formatStatus(status);
+
+export const whatsappTemplateStatusColor = (status: string): string => {
+  switch (status) {
+    case 'approved':
+      return 'success';
+    case 'pending':
+      return 'info';
+    case 'rejected':
+    case 'disabled':
+      return 'error';
+    default:
+      return 'default';
+  }
+};
+
+const WHATSAPP_MESSAGE_STATUS_LABELS: Record<string, string> = {
+  queued: 'Queued',
+  sending: 'Sending',
+  sent: 'Sent',
+  delivered: 'Delivered',
+  read: 'Read',
+  failed: 'Failed',
+  received: 'Received',
+  skipped: 'Skipped',
+  suppressed: 'Suppressed',
+};
+
+export const formatWhatsappMessageStatus = (status: string): string =>
+  WHATSAPP_MESSAGE_STATUS_LABELS[status] ?? formatStatus(status);
+
+export const whatsappMessageStatusColor = (status: string): string => {
+  switch (status) {
+    case 'sent':
+    case 'delivered':
+    case 'read':
+      return 'success';
+    case 'queued':
+    case 'sending':
+      return 'info';
+    case 'failed':
+    case 'suppressed':
+      return 'error';
+    case 'skipped':
+      return 'warning';
+    default:
+      return 'default';
+  }
+};
+
+const SUPPRESSION_REASON_LABELS: Record<string, string> = {
+  opt_out: 'Opted out',
+  complaint: 'Complaint',
+  manual: 'Manual block',
+};
+
+export const formatSuppressionReason = (reason: string): string =>
+  SUPPRESSION_REASON_LABELS[reason] ?? formatStatus(reason);
+

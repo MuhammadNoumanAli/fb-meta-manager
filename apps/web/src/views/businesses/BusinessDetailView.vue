@@ -97,6 +97,9 @@
           <v-tab v-if="canReadLeads" value="leads" prepend-icon="mdi-account-multiple-plus-outline">
             Leads
           </v-tab>
+          <v-tab v-if="canReadWhatsapp" value="whatsapp" prepend-icon="mdi-whatsapp">
+            WhatsApp
+          </v-tab>
           <v-tab
             v-if="canReadCampaigns"
             value="approvals"
@@ -213,7 +216,18 @@
           </v-window-item>
 
           <v-window-item v-if="canReadLeads" value="leads">
-            <LeadsTab :business-id="businessId" :can-manage="canManageLeads" />
+            <LeadsTab
+              :business-id="businessId"
+              :can-manage="canManageLeads"
+              :can-whatsapp="canReadWhatsapp"
+            />
+          </v-window-item>
+
+          <v-window-item v-if="canReadWhatsapp" value="whatsapp">
+            <WhatsAppTab
+              :business-id="businessId"
+              :can-manage="canManageWhatsapp"
+            />
           </v-window-item>
 
           <v-window-item v-if="canReadCampaigns" value="approvals">
@@ -392,6 +406,7 @@ import BudgetsTab from '@/components/budgets/BudgetsTab.vue';
 import BusinessIntegrationsTab from '@/components/integrations/BusinessIntegrationsTab.vue';
 import CampaignsTab from '@/components/campaigns/CampaignsTab.vue';
 import LeadsTab from '@/components/leads/LeadsTab.vue';
+import WhatsAppTab from '@/components/whatsapp/WhatsAppTab.vue';
 import { ApiError } from '@/services/api/client';
 import { workspaceApi } from '@/services/api/workspace.api';
 import { useAuthStore } from '@/stores/auth';
@@ -474,6 +489,12 @@ const canReadIntegrations = computed(
 );
 const canManageIntegrations = computed(
   () => detail.value?.permissions.includes('integration.manage') ?? false,
+);
+const canReadWhatsapp = computed(
+  () => detail.value?.permissions.includes('whatsapp.read') ?? false,
+);
+const canManageWhatsapp = computed(
+  () => detail.value?.permissions.includes('whatsapp.manage') ?? false,
 );
 
 function formatDate(value: string): string {

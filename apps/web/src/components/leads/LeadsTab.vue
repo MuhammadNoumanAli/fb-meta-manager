@@ -252,7 +252,7 @@
       </v-expansion-panels>
     </template>
 
-    <v-dialog v-model="leadDialog" max-width="620">
+    <v-dialog v-model="leadDialog" max-width="760">
       <v-card v-if="selectedLead">
         <v-card-title class="d-flex align-center justify-space-between">
           <span>{{ selectedLead.fullName || 'Lead details' }}</span>
@@ -297,6 +297,98 @@
               {{ selectedLead.message }}
             </v-sheet>
           </div>
+
+          <template v-if="canWhatsapp">
+            <v-divider class="my-4" />
+            <div class="d-flex flex-wrap align-center justify-space-between ga-2 mb-2">
+              <div class="text-subtitle-2 font-weight-medium">WhatsApp</div>
+              <v-btn
+                size="small"
+                variant="text"
+                prepend-icon="mdi-refresh"
+                :loading="whatsappLoading"
+                @click="loadLeadWhatsapp(selectedLead.id)"
+              >
+                Refresh
+              </v-btn>
+            </div>
+
+            <div class="d-flex flex-wrap align-center ga-2 mb-3">
+              <v-chip size="small" variant="tonal" :color="consentColor">
+                {{ formatConsent(selectedLead.consentStatus) }}
+              </v-chip>
+              <v-btn
+                v-if="canManage"
+                size="small"
+                variant="tonal"
+                color="success"
+                :loading="whatsappBusy === 'grant'"
+                @click="updateLeadConsent('granted')"
+              >
+                Grant consent
+              </v-btn>
+              <v-btn
+                v-if="canManage"
+                size="small"
+                variant="tonal"
+                color="error"
+                :loading="whatsappBusy === 'deny'"
+                @click="updateLeadConsent('denied')"
+              >
+                Record opt-out
+              </v-btn>
+            </div>
+
+            <div v-if="canManage" class="d-flex flex-wrap align-center ga-2 mb-3">
+              <v-select
+                v-model="selectedTemplateId"
+                :items="approvedTemplates"
+                item-title="title"
+                item-value="value"
+                label="Approved template"
+                density="compact"
+                variant="outlined"
+                hide-details
+                style="max-width: 300px"
+              />
+              <v-btn
+                color="primary"
+                variant="tonal"
+                prepend-icon="mdi-send"
+                :disabled="!selectedTemplateId"
+                :loading="whatsappBusy === 'send'"
+                @click="sendWhatsappMessage"
+              >
+                Send template
+              </v-btn>
+            </div>
+
+            <v-alert
+              v-if="whatsappError"
+              type="error"
+              variant="tonal"
+              density="compact"
+              class="mb-3"
+            >
+              {{ whatsappError }}
+            </v-alert>
+
+            <v-list v-if="leadMessages.length > 0" density="compact" lines="two" class="pa-0">
+              <v-list-item v-for="message in leadMessages" :key="message.id">
+                <v-list-item-title class="text-body-2">
+                  {{ message.body || '—' }}
+                </v-list-item-title>
+                <v-list-item-subtitle>
+                  {{ formatWhatsappMessageStatus(message.status) }} ·
+                  {{ formatDateTime(message.createdAt) }}
+                  <span v-if="message.error"> · {{ message.error }}</span>
+                </v-list-item-subtitle>
+              </v-list-item>
+            </v-list>
+            <div v-else class="text-caption text-medium-emphasis">
+              No WhatsApp messages for this lead yet.
+            </div>
+          </template>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -368,23 +460,27 @@
 import { computed, onMounted, ref } from 'vue';
 import { API_BASE_URL, ApiError } from '@/services/api/client';
 import { leadsApi } from '@/services/api/leads.api';
+import { whatsappApi } from '@/services/api/whatsapp.api';
 import type {
   Lead,
   LeadSource,
   LeadStatus,
   LeadSyncLog,
 } from '@/types/leads';
+import type { WhatsappMessage } from '@/types/whatsapp';
 import { formatDateTime } from '@/utils/format';
 import {
   formatConsent,
   formatLeadSource,
   formatStatus,
+  formatWhatsappMessageStatus,
   leadStatusColor,
 } from '@/utils/labels';
 
 const props = defineProps<{
   businessId: string;
   canManage: boolean;
+  canWhatsapp?: boolean;
 }>();
 
 const leads = ref<Lead[]>([]);
@@ -415,6 +511,24 @@ const issuedKey = ref('');
 const snackbar = ref(false);
 const snackbarMessage = ref('');
 const snackbarColor = ref('success');
+
+const approvedTemplates = ref<Array<{ title: string; value: string }>>([]);
+const selectedTemplateId = ref<string | null>(null);
+const leadMessages = ref<WhatsappMessage[]>([]);
+const whatsappLoading = ref(false);
+const whatsappBusy = ref<'grant' | 'deny' | 'send' | null>(null);
+const whatsappError = ref<string | null>(null);
+
+const consentColor = computed(() => {
+  switch (selectedLead.value?.consentStatus) {
+    case 'granted':
+      return 'success';
+    case 'denied':
+      return 'error';
+    default:
+      return 'default';
+  }
+});
 
 const statusOptions = [
   { title: 'New', value: 'new' },
@@ -524,6 +638,92 @@ async function changeStatus(lead: Lead, value: LeadStatus): Promise<void> {
 function openLead(lead: Lead): void {
   selectedLead.value = lead;
   leadDialog.value = true;
+  selectedTemplateId.value = null;
+  whatsappError.value = null;
+
+  if (props.canWhatsapp) {
+    void loadLeadWhatsapp(lead.id);
+  }
+}
+
+async function loadLeadWhatsapp(leadId: string): Promise<void> {
+  if (!props.canWhatsapp) {
+    return;
+  }
+
+  whatsappLoading.value = true;
+  whatsappError.value = null;
+
+  try {
+    const [templates, messages] = await Promise.all([
+      whatsappApi.listTemplates(props.businessId, {
+        status: 'approved',
+        pageSize: 100,
+      }),
+      whatsappApi.listMessages(props.businessId, { leadId, pageSize: 10 }),
+    ]);
+
+    approvedTemplates.value = templates.items
+      .filter((template) => template.isEnabled)
+      .map((template) => ({
+        title: `${template.name} · ${template.language}`,
+        value: template.id,
+      }));
+    leadMessages.value = messages.items;
+  } catch (caught) {
+    whatsappError.value = describeError(caught, 'Unable to load WhatsApp activity.');
+  } finally {
+    whatsappLoading.value = false;
+  }
+}
+
+async function updateLeadConsent(status: 'granted' | 'denied'): Promise<void> {
+  const lead = selectedLead.value;
+  if (!lead) {
+    return;
+  }
+
+  whatsappBusy.value = status === 'granted' ? 'grant' : 'deny';
+  whatsappError.value = null;
+
+  try {
+    await whatsappApi.recordConsent(props.businessId, { leadId: lead.id, status });
+    lead.consentStatus = status;
+    notify(status === 'granted' ? 'Consent recorded.' : 'Opt-out recorded.');
+  } catch (caught) {
+    whatsappError.value = describeError(caught, 'Unable to record consent.');
+  } finally {
+    whatsappBusy.value = null;
+  }
+}
+
+async function sendWhatsappMessage(): Promise<void> {
+  const lead = selectedLead.value;
+  if (!lead || !selectedTemplateId.value) {
+    return;
+  }
+
+  whatsappBusy.value = 'send';
+  whatsappError.value = null;
+
+  try {
+    const message = await whatsappApi.sendMessage(props.businessId, {
+      leadId: lead.id,
+      templateId: selectedTemplateId.value,
+    });
+
+    if (message.status === 'skipped' || message.status === 'suppressed') {
+      notify(message.error ?? 'Message blocked before delivery.', 'warning');
+    } else {
+      notify('Template message queued for delivery.');
+    }
+
+    await loadLeadWhatsapp(lead.id);
+  } catch (caught) {
+    whatsappError.value = describeError(caught, 'Unable to send the template message.');
+  } finally {
+    whatsappBusy.value = null;
+  }
 }
 
 async function issueKey(): Promise<void> {
