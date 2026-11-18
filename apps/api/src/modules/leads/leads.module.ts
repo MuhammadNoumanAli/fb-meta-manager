@@ -10,6 +10,7 @@ import { WebhookEvent } from '../../database/entities/webhook-event.entity';
 import { WebhookProcessingLog } from '../../database/entities/webhook-processing-log.entity';
 import { AuditModule } from '../audit/audit.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { LeadIntakeService } from './lead-intake.service';
 import { LeadProcessor } from './lead-processor';
 import { LeadQueueService } from './lead-queue.service';
@@ -31,6 +32,7 @@ import { WebsiteLeadController } from './website-lead.controller';
     BullModule.registerQueue({ name: QUEUE_NAMES.LEAD_PROCESSING }),
     AuditModule,
     IntegrationsModule,
+    WhatsappModule,
   ],
   controllers: [
     LeadsController,

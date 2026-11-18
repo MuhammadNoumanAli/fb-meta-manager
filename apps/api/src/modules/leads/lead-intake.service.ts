@@ -16,6 +16,7 @@ import { WebhookEvent } from '../../database/entities/webhook-event.entity';
 import { WebhookProcessingLog } from '../../database/entities/webhook-processing-log.entity';
 import { IntegrationCryptoService } from '../integrations/integration-crypto.service';
 import { MetaGraphClient, MetaLeadDetails } from '../integrations/meta-graph.client';
+import { WhatsappMessagingService } from '../whatsapp/whatsapp-messaging.service';
 import { CreateWebsiteLeadDto } from './dto/create-website-lead.dto';
 
 export interface WebsiteLeadResult {
@@ -129,6 +130,7 @@ export class LeadIntakeService {
     private readonly authorizations: Repository<IntegrationAuthorization>,
     private readonly crypto: IntegrationCryptoService,
     private readonly graph: MetaGraphClient,
+    private readonly whatsapp: WhatsappMessagingService,
   ) {}
 
   /**
@@ -249,6 +251,10 @@ export class LeadIntakeService {
         'Lead created',
         { leadId: leadId ?? null, durationMs: Date.now() - startedAt },
       );
+
+      if (leadId) {
+        await this.acknowledgeLead(leadId);
+      }
     } catch (error) {
       const message = this.describeError(error);
 
@@ -350,6 +356,8 @@ export class LeadIntakeService {
         metadata: { leadId } as never,
       });
 
+      await this.acknowledgeLead(leadId);
+
       return { lead, duplicate: false };
     } catch (error) {
       if (dedupeHash && isDuplicateError(error)) {
@@ -361,6 +369,22 @@ export class LeadIntakeService {
       }
 
       throw error;
+    }
+  }
+
+  /**
+   * WhatsApp acknowledgment is best-effort. Lead capture must never fail
+   * because consent is missing, a template is unapproved or the queue is down.
+   */
+  private async acknowledgeLead(leadId: string): Promise<void> {
+    try {
+      await this.whatsapp.sendAcknowledgment(leadId);
+    } catch (error) {
+      this.logger.warn(
+        `WhatsApp acknowledgment for lead ${leadId} skipped: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
     }
   }
 

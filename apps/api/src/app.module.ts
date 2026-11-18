@@ -29,6 +29,7 @@ import { QueuesModule } from './modules/queues/queues.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { UsersModule } from './modules/users/users.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -140,6 +141,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     ApprovalsModule,
     BudgetsModule,
     AutomationModule,
+    WhatsappModule,
     WebhooksModule,
   ],
   controllers: [AppController],
